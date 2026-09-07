@@ -49,6 +49,12 @@ interface LocalAIEngine {
      */
     fun unload()
 
+    /**
+     * Generate from a raw pre-formatted prompt string (no history wrapping).
+     * Used for health explanation prompts that are already fully formatted.
+     */
+    fun generateRaw(prompt: String): Flow<String>
+
     /** Returns true if the model is loaded and ready to generate */
     fun isReady(): Boolean
 }

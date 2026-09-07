@@ -18,7 +18,7 @@ import androidx.core.app.NotificationCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import com.infinity.ai.MainActivity
-import com.infinity.ai.ui.theme.InfinityTheme
+import com.infinity.ai.ui.theme.GOneTheme
 import kotlinx.coroutines.*
 
 /**
@@ -46,7 +46,7 @@ class InfinityOverlayService : Service() {
         const val EXTRA_RESULT_CODE  = "result_code"
         const val EXTRA_RESULT_DATA  = "result_data"
         private const val NOTIF_ID   = 9001
-        private const val CHANNEL_ID = "infinity_overlay"
+        private const val CHANNEL_ID = "gone_overlay"
         private const val TAG        = "InfinityOverlayService"
 
         @Volatile var pendingScreenshot: Bitmap? = null
@@ -261,7 +261,7 @@ class InfinityOverlayService : Service() {
         )
 
         val host = OverlayComposeHost(this) {
-            InfinityTheme(darkTheme = true) {
+            GOneTheme(darkTheme = true) {
                 CircleLearnBottomSheetHost(
                     vm          = vm,
                     onDismiss   = {
@@ -427,7 +427,7 @@ class InfinityOverlayService : Service() {
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val ch = NotificationChannel(
-                CHANNEL_ID, "Infinity Circle Learn", NotificationManager.IMPORTANCE_LOW
+                CHANNEL_ID, "GONE Circle Learn", NotificationManager.IMPORTANCE_LOW
             ).apply { description = "Circle Learn overlay service" }
             (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
                 .createNotificationChannel(ch)
@@ -446,7 +446,7 @@ class InfinityOverlayService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Infinity Circle Learn")
+            .setContentTitle("GONE Circle Learn")
             .setContentText("Tap the ∞ bubble to circle anything and learn instantly")
             .setSmallIcon(android.R.drawable.ic_menu_camera)
             .setOngoing(true)

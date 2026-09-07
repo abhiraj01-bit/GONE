@@ -1,3 +1,5 @@
 <resources>
-    <string name="app_name">Infinity</string>
+    <string name="app_name">G-ONE</string>
+    <string name="notification_channel_health">Health Alerts</string>
+    <string name="notification_channel_health_desc">Anomaly and health event notifications</string>
 </resources>

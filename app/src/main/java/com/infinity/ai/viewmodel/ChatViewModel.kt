@@ -107,7 +107,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     fun startFromSuggestion(prompt: String) {
         _showSuggestions.value = false
-        val welcome = ChatMessage(nextId(), "Hello! I'm Infinity. How can I help you today?", isUser = false)
+        val welcome = ChatMessage(nextId(), "Hello! I'm G-ONE. How can I help you today?", isUser = false)
         val userMsg = ChatMessage(nextId(), prompt, isUser = true)
         _messages.value = listOf(welcome, userMsg)
         if (aiState.value is AIInferenceState.Loading ||

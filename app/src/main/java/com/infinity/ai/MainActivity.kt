@@ -9,7 +9,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.core.view.WindowCompat
 import com.infinity.ai.ui.navigation.AppNavigation
-import com.infinity.ai.ui.theme.InfinityTheme
+import com.infinity.ai.ui.theme.GOneTheme
 import com.infinity.ai.viewmodel.ThemeViewModel
 
 class MainActivity : ComponentActivity() {
@@ -22,7 +22,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             val isDarkTheme by themeViewModel.isDarkTheme.collectAsState()
-            InfinityTheme(darkTheme = isDarkTheme) {
+            GOneTheme(darkTheme = isDarkTheme) {
                 AppNavigation(
                     isDarkTheme = isDarkTheme,
                     onToggleTheme = themeViewModel::toggleTheme

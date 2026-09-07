@@ -58,9 +58,11 @@ class LlamaEngine : LocalAIEngine {
     }
 
     override fun generate(history: List<ChatMessage>, userInput: String): Flow<String> =
+        generateRaw(PromptFormatter.buildPrompt(history, userInput))
+
+    override fun generateRaw(prompt: String): Flow<String> =
         callbackFlow {
             setState(AIInferenceState.Thinking)
-            val prompt = PromptFormatter.buildPrompt(history, userInput)
             Log.d(TAG, "Prompt length: ${prompt.length} chars")
 
             LlamaJniBridge.generate(
@@ -68,17 +70,12 @@ class LlamaEngine : LocalAIEngine {
                 maxTokens = MAX_TOKENS,
                 callback  = object : LlamaCallback {
                     override fun onToken(token: String) {
-                        // Atomic CAS: only transitions Thinking→Responding once.
-                        // Safe from C++ JNI threads. If stop() already set Idle,
-                        // the CAS fails and state stays Idle — correct behaviour.
                         casState(AIInferenceState.Thinking, AIInferenceState.Responding())
                         trySend(token)
                     }
                     override fun onComplete() {
                         Log.i(TAG, "Generation complete")
                         setState(AIInferenceState.Idle)
-                        // Guard: C++ may call onComplete after Kotlin cancellation
-                        // already closed the channel — avoid ClosedSendChannelException.
                         if (!channel.isClosedForSend) channel.close()
                     }
                     override fun onError(message: String) {

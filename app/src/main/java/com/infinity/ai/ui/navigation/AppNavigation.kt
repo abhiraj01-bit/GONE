@@ -26,20 +26,25 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.*
+import com.infinity.ai.ui.components.OrbState
 import com.infinity.ai.ui.components.toOrbState
 import com.infinity.ai.ui.screens.*
+import com.infinity.ai.ui.theme.Blue500
 import com.infinity.ai.viewmodel.ChatViewModel
+import com.infinity.ai.viewmodel.HealthViewModel
 import com.infinity.ai.viewmodel.LibraryViewModel
 
 sealed class Screen(val route: String, val label: String, val icon: ImageVector) {
-    object Dashboard : Screen("dashboard", "Home",     Icons.Default.Home)
-    object Chat      : Screen("chat",      "Chat",     Icons.Default.Chat)
-    object Tools     : Screen("tools",     "Tools",    Icons.Default.Apps)
-    object Library   : Screen("library",   "Library",  Icons.Default.AutoStories)
-    object Settings  : Screen("settings",  "Settings", Icons.Default.Settings)
+    object Dashboard : Screen("dashboard", "Home",    Icons.Default.Home)
+    object Chat      : Screen("chat",      "Chat",    Icons.Default.Chat)
+    object Health    : Screen("health",    "Health",  Icons.Default.MonitorHeart)
+    object Tools     : Screen("tools",     "Tools",   Icons.Default.Apps)
+    object Settings  : Screen("settings",  "Settings",Icons.Default.Settings)
 }
 
-private val navItems = listOf(Screen.Dashboard, Screen.Chat, Screen.Tools, Screen.Library, Screen.Settings)
+private val navItems = listOf(
+    Screen.Dashboard, Screen.Chat, Screen.Health, Screen.Tools, Screen.Settings
+)
 
 @Composable
 fun AppNavigation(isDarkTheme: Boolean, onToggleTheme: () -> Unit) {
@@ -49,15 +54,26 @@ fun AppNavigation(isDarkTheme: Boolean, onToggleTheme: () -> Unit) {
     val showNav       = currentRoute in navItems.map { it.route }
 
     val context = LocalContext.current
-    val chatViewModel: ChatViewModel = viewModel()
+    val chatViewModel: ChatViewModel     = viewModel()
+    val healthViewModel: HealthViewModel = viewModel()
     val libraryViewModel: LibraryViewModel = viewModel()
-    val aiState by chatViewModel.aiState.collectAsState()
-    val orbState = aiState.toOrbState()
 
-    // ── Mic permission + SpeechRecognizer ─────────────────────────────────────
+    val aiState     by chatViewModel.aiState.collectAsState()
+    val aiOrbState  = aiState.toOrbState()
+    val healthOrb   by healthViewModel.healthOrbState.collectAsState()
+    val alerts      by healthViewModel.unacknowledgedAlerts.collectAsState()
+
+    // Combine: health anomaly takes priority over AI state for orb
+    val orbState: OrbState = when {
+        healthOrb == OrbState.AnomalyDetected -> OrbState.AnomalyDetected
+        healthOrb == OrbState.Monitoring && aiOrbState == OrbState.Idle -> OrbState.Monitoring
+        else -> aiOrbState
+    }
+
+    // Mic permission + SpeechRecognizer
     val micPermLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { /* permission result handled silently; VoiceScreen reacts to aiState */ }
+    ) {}
 
     val speechRecognizer = remember {
         if (SpeechRecognizer.isRecognitionAvailable(context))
@@ -112,6 +128,8 @@ fun AppNavigation(isDarkTheme: Boolean, onToggleTheme: () -> Unit) {
                 ) {
                     navItems.forEach { screen ->
                         val selected = currentRoute == screen.route
+                        // Show alert badge on Health tab
+                        val showBadge = screen == Screen.Health && alerts.isNotEmpty()
                         NavigationBarItem(
                             selected = selected,
                             onClick  = {
@@ -123,12 +141,18 @@ fun AppNavigation(isDarkTheme: Boolean, onToggleTheme: () -> Unit) {
                                     restoreState    = true
                                 }
                             },
-                            icon  = { Icon(screen.icon, screen.label, modifier = Modifier.size(22.dp)) },
-                            label = { Text(screen.label, style = MaterialTheme.typography.labelSmall) },
+                            icon = {
+                                BadgedBox(badge = {
+                                    if (showBadge) Badge()
+                                }) {
+                                    Icon(screen.icon, screen.label, modifier = Modifier.size(22.dp))
+                                }
+                            },
+                            label  = { Text(screen.label, style = MaterialTheme.typography.labelSmall) },
                             colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor   = Color(0xFF4F8CFF),
-                                selectedTextColor   = Color(0xFF4F8CFF),
-                                indicatorColor      = Color(0xFF4F8CFF).copy(alpha = 0.10f),
+                                selectedIconColor   = Blue500,
+                                selectedTextColor   = Blue500,
+                                indicatorColor      = Blue500.copy(alpha = 0.10f),
                                 unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                 unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -163,7 +187,10 @@ fun AppNavigation(isDarkTheme: Boolean, onToggleTheme: () -> Unit) {
                     onNavigateToOcr        = { navController.navigate("ocr") },
                     onNavigateToPdf        = { navController.navigate("pdf_summary") },
                     onNavigateToQuiz       = { navController.navigate("quiz") },
-                    onNavigateToScreenshot = { navController.navigate("screenshot") }
+                    onNavigateToScreenshot = { navController.navigate("screenshot") },
+                    onNavigateToHealth     = { navController.navigate(Screen.Health.route) },
+                    onNavigateToAlerts     = { navController.navigate("health_alerts") },
+                    onNavigateToDevice     = { navController.navigate("device") }
                 )
             }
             composable(Screen.Chat.route) {
@@ -172,6 +199,31 @@ fun AppNavigation(isDarkTheme: Boolean, onToggleTheme: () -> Unit) {
                     bottomPadding     = innerPadding.calculateBottomPadding(),
                     onNavigateToVoice = { navController.navigate("voice") },
                     chatViewModel     = chatViewModel
+                )
+            }
+            composable(Screen.Health.route) {
+                HealthMonitorScreen(
+                    isDarkTheme        = isDarkTheme,
+                    bottomPadding      = innerPadding.calculateBottomPadding(),
+                    onNavigateToDevice = { navController.navigate("device") }
+                )
+            }
+            composable("health_alerts") {
+                HealthAlertsScreen(
+                    isDarkTheme   = isDarkTheme,
+                    bottomPadding = innerPadding.calculateBottomPadding()
+                )
+            }
+            composable("health_history") {
+                HealthHistoryScreen(
+                    isDarkTheme   = isDarkTheme,
+                    bottomPadding = innerPadding.calculateBottomPadding()
+                )
+            }
+            composable("device") {
+                DeviceScreen(
+                    isDarkTheme   = isDarkTheme,
+                    bottomPadding = innerPadding.calculateBottomPadding()
                 )
             }
             composable(Screen.Tools.route) {
@@ -220,13 +272,6 @@ fun AppNavigation(isDarkTheme: Boolean, onToggleTheme: () -> Unit) {
                     onNavigateBack = { navController.popBackStack() }
                 )
             }
-            composable("circle_learn") {
-                CircleLearnEntryScreen(
-                    isDarkTheme    = isDarkTheme,
-                    bottomPadding  = innerPadding.calculateBottomPadding(),
-                    onNavigateBack = { navController.popBackStack() }
-                )
-            }
             composable(Screen.Settings.route) {
                 SettingsScreen(
                     isDarkTheme   = isDarkTheme,
@@ -234,11 +279,11 @@ fun AppNavigation(isDarkTheme: Boolean, onToggleTheme: () -> Unit) {
                     onToggleTheme = onToggleTheme
                 )
             }
-            composable(Screen.Library.route) {
+            composable("library") {
                 LibraryScreen(
                     isDarkTheme   = isDarkTheme,
                     bottomPadding = innerPadding.calculateBottomPadding(),
-                    onOpenEntry   = { /* detail view future */ },
+                    onOpenEntry   = {},
                     vm            = libraryViewModel
                 )
             }

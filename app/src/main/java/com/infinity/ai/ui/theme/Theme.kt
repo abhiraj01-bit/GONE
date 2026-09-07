@@ -40,7 +40,7 @@ private val Light = lightColorScheme(
 )
 
 @Composable
-fun InfinityTheme(darkTheme: Boolean = true, content: @Composable () -> Unit) {
+fun GOneTheme(darkTheme: Boolean = true, content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = if (darkTheme) Dark else Light,
         typography = Typography,

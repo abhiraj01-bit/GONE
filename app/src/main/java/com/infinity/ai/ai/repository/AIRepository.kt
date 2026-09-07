@@ -132,4 +132,22 @@ class AIRepository(context: Context) {
 
     /** True if model file exists on disk (already extracted) */
     fun isModelOnDisk(): Boolean = storageManager.isModelExtracted()
+
+    /**
+     * Generate a health anomaly explanation using the existing Qwen pipeline.
+     * Returns the full explanation string (blocking collect).
+     */
+    suspend fun generateHealthExplanation(anomalyJson: String): String {
+        val prompt = com.infinity.ai.ai.prompts.PromptFormatter.buildHealthExplanationPrompt(anomalyJson)
+        val sb = StringBuilder()
+        engine.generateRaw(prompt).collect { token -> sb.append(token) }
+        return sb.toString().trim()
+    }
+
+    suspend fun generateSessionReport(sessionJson: String): String {
+        val prompt = com.infinity.ai.ai.prompts.PromptFormatter.buildSessionReportPrompt(sessionJson)
+        val sb = StringBuilder()
+        engine.generateRaw(prompt).collect { token -> sb.append(token) }
+        return sb.toString().trim()
+    }
 }

@@ -38,7 +38,10 @@ fun DashboardScreen(
     onNavigateToOcr        : () -> Unit = onNavigateToChat,
     onNavigateToPdf        : () -> Unit = onNavigateToChat,
     onNavigateToQuiz       : () -> Unit = onNavigateToChat,
-    onNavigateToScreenshot : () -> Unit = onNavigateToChat
+    onNavigateToScreenshot : () -> Unit = onNavigateToChat,
+    onNavigateToHealth     : () -> Unit = {},
+    onNavigateToAlerts     : () -> Unit = {},
+    onNavigateToDevice     : () -> Unit = {}
 ) {
     val dark = isDarkTheme
     val bg   = if (dark) DarkBg else LightBg
@@ -59,27 +62,7 @@ fun DashboardScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(34.dp)
-                            .background(Blue50, CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("∞", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = Blue500)
-                    }
-                    Column {
-                        Text(
-                            "Infinity AI",
-                            style = MaterialTheme.typography.titleSmall,
-                            color = if (dark) TextPrimary else TextPrimaryLight,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
+                GoneLogo(isDarkTheme = dark, symbolSize = 32.dp)
                 Box(
                     modifier = Modifier
                         .size(38.dp)
@@ -113,7 +96,7 @@ fun DashboardScreen(
             )
             Spacer(Modifier.height(2.dp))
             Text(
-                "What can I help\nyou with?",
+                "Health & AI\nCommand Center",
                 style = MaterialTheme.typography.headlineLarge,
                 color = if (dark) TextPrimary else TextPrimaryLight,
                 fontWeight = FontWeight.Bold,
@@ -140,7 +123,7 @@ fun DashboardScreen(
                     modifier = Modifier.size(16.dp)
                 )
                 Text(
-                    "Ask Infinity anything…",
+                    "Ask G-ONE anything…",
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (dark) TextSecondary else TextSecondaryLight,
                     modifier = Modifier.weight(1f)
@@ -210,7 +193,46 @@ fun DashboardScreen(
             Spacer(Modifier.height(12.dp))
 
             // ══════════════════════════════════════════════════════════════════
-            // ROW 3 — PDF | Quiz | Screenshot (3 equal small cards)
+            // ROW 3 — Health Monitor (wide) | Alerts + Device (stacked)
+            // ══════════════════════════════════════════════════════════════════
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                BentoFeatureCard(
+                    icon     = Icons.Default.MonitorHeart,
+                    title    = "Health\nMonitor",
+                    subtitle = "Live vitals",
+                    accent   = SuccessGreen,
+                    dark     = dark,
+                    onClick  = onNavigateToHealth,
+                    modifier = Modifier.weight(1.15f).height(160.dp)
+                )
+                Column(
+                    modifier = Modifier.weight(0.85f),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    BentoSmallCard(
+                        icon    = Icons.Default.Warning,
+                        label   = "Alerts",
+                        dark    = dark,
+                        onClick = onNavigateToAlerts,
+                        modifier = Modifier.fillMaxWidth().height(74.dp)
+                    )
+                    BentoSmallCard(
+                        icon    = Icons.Default.Bluetooth,
+                        label   = "Device",
+                        dark    = dark,
+                        onClick = onNavigateToDevice,
+                        modifier = Modifier.fillMaxWidth().height(74.dp)
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            // ══════════════════════════════════════════════════════════════════
+            // ROW 4 — PDF | Quiz | Screenshot (3 equal small cards)
             // ══════════════════════════════════════════════════════════════════
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -260,18 +282,30 @@ private fun ChatHeroCard(
     )
 
     val statusLabel = when (orbState) {
-        OrbState.Idle       -> "Ready · tap to start"
-        OrbState.Loading    -> "Loading model…"
-        OrbState.Thinking   -> "Thinking…"
-        OrbState.Responding -> "Responding…"
-        OrbState.Error      -> "Error · tap to retry"
+        OrbState.Idle            -> "Ready · tap to start"
+        OrbState.Loading         -> "Loading model…"
+        OrbState.Thinking        -> "Thinking…"
+        OrbState.Responding      -> "Responding…"
+        OrbState.Error           -> "Error · tap to retry"
+        OrbState.Monitoring      -> "Monitoring health…"
+        OrbState.Reading         -> "Reading vitals…"
+        OrbState.Analyzing       -> "Analyzing…"
+        OrbState.AnomalyDetected -> "Anomaly detected"
+        OrbState.AiExplaining    -> "AI explaining…"
+        OrbState.AlertReady      -> "Alert ready"
     }
     val statusColor = when (orbState) {
-        OrbState.Idle       -> SuccessGreen
-        OrbState.Loading    -> WarnAmber
-        OrbState.Thinking   -> Blue400
-        OrbState.Responding -> Blue400
-        OrbState.Error      -> ErrorRed
+        OrbState.Idle            -> SuccessGreen
+        OrbState.Loading         -> WarnAmber
+        OrbState.Thinking        -> Blue400
+        OrbState.Responding      -> Blue400
+        OrbState.Error           -> ErrorRed
+        OrbState.Monitoring      -> SuccessGreen
+        OrbState.Reading         -> Blue400
+        OrbState.Analyzing       -> Blue400
+        OrbState.AnomalyDetected -> ErrorRed
+        OrbState.AiExplaining    -> Blue400
+        OrbState.AlertReady      -> WarnAmber
     }
 
     Box(
@@ -316,7 +350,7 @@ private fun ChatHeroCard(
                 }
                 Column {
                     Text(
-                        "Chat with Infinity",
+                        "Chat with G-ONE",
                         style = MaterialTheme.typography.titleMedium,
                         color = Color.White,
                         fontWeight = FontWeight.Bold

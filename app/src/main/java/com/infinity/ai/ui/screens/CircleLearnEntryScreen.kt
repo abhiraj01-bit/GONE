@@ -134,7 +134,7 @@ fun CircleLearnEntryScreen(
                 Spacer(Modifier.height(20.dp))
 
                 Text(
-                    if (serviceRunning) "Circle Learn is Active" else "Infinity Circle Learn",
+                    if (serviceRunning) "Circle Learn is Active" else "G-ONE Circle Learn",
                     style = MaterialTheme.typography.headlineSmall,
                     color = if (isDarkTheme) TextPrimary else TextPrimaryLight,
                     fontWeight = FontWeight.Bold, textAlign = TextAlign.Center
@@ -255,7 +255,7 @@ private fun CircleLearnOrb(isActive: Boolean) {
                 ),
             contentAlignment = Alignment.Center
         ) {
-            Text("∞", fontSize = 32.sp, color = Color.White, fontWeight = FontWeight.Light)
+            com.infinity.ai.ui.components.GoneEmblem(size = 36.dp, tint = Color.White)
         }
     }
 }

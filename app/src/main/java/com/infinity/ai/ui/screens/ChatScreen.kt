@@ -100,7 +100,7 @@ fun ChatScreen(
                 type       = EntryType.NOTE,
                 content    = if (prompt.isNotBlank()) "Q: $prompt\n\nA: $response" else response,
                 title      = prompt.take(60).ifBlank { "Chat Response" },
-                sourceInfo = "Infinity Chat"
+                sourceInfo = "G-ONE Chat"
             )
             scope.launch { snackbarHostState.showSnackbar("Saved to Knowledge Vault") }
         }
@@ -233,7 +233,7 @@ private fun ChatHeader(isDarkTheme: Boolean, aiState: AIInferenceState, onClearC
         ) {
             Box(modifier = Modifier.size(6.dp).background(dotColor, CircleShape))
             Text(
-                "Infinity AI",
+                "G-ONE AI",
                 style = MaterialTheme.typography.labelLarge,
                 color = if (isDarkTheme) TextPrimary else TextPrimaryLight
             )
@@ -421,7 +421,7 @@ private fun ChatInputBar(
                     decorationBox = { inner ->
                         if (input.isEmpty()) {
                             Text(
-                                if (isGenerating) "Generating…" else "Message Infinity…",
+                                if (isGenerating) "Generating…" else "Message G-ONE…",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = if (isDarkTheme) TextSecondary else TextSecondaryLight
                             )
@@ -520,7 +520,7 @@ private fun ChatBubble(
                     Text("∞", style = MaterialTheme.typography.labelSmall, color = Blue500, fontSize = 10.sp)
                 }
                 Text(
-                    "Infinity",
+                    "G-ONE",
                     style = MaterialTheme.typography.labelSmall,
                     color = Blue500,
                     fontWeight = FontWeight.SemiBold

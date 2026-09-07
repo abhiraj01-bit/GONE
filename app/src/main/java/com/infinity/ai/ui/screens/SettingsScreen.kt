@@ -13,7 +13,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -24,15 +23,19 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.infinity.ai.ai.state.AIInferenceState
+import com.infinity.ai.health.mock.SimulatorScenario
 import com.infinity.ai.ui.components.GradientBackground
 import com.infinity.ai.ui.components.GlassCard
 import com.infinity.ai.ui.theme.*
 import com.infinity.ai.viewmodel.ChatViewModel
+import com.infinity.ai.viewmodel.HealthViewModel
 
 @Composable
 fun SettingsScreen(isDarkTheme: Boolean, bottomPadding: Dp, onToggleTheme: () -> Unit) {
     val chatViewModel: ChatViewModel = viewModel()
+    val healthViewModel: HealthViewModel = viewModel()
     val aiState by chatViewModel.aiState.collectAsState()
+    val simRunning by healthViewModel.simulatorRunning.collectAsState()
     val scroll = rememberScrollState()
     val context = LocalContext.current
 
@@ -45,9 +48,8 @@ fun SettingsScreen(isDarkTheme: Boolean, bottomPadding: Dp, onToggleTheme: () ->
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
                     PackageManager.PERMISSION_GRANTED
         }
-    } else {
-        true
-    }
+    } else true
+
     val storageGranted = remember {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) true
         else ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) ==
@@ -66,27 +68,15 @@ fun SettingsScreen(isDarkTheme: Boolean, bottomPadding: Dp, onToggleTheme: () ->
 
             Spacer(Modifier.height(24.dp))
 
-            // Profile card
-            GlassCard(darkTheme = isDarkTheme, modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)) {
+            GlassCard(darkTheme = isDarkTheme, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Box(
-                        modifier = Modifier.size(50.dp)
-                            .background(
-                                Brush.linearGradient(listOf(Blue500, Blue400)),
-                                CircleShape
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("∞", fontSize = 21.sp, color = Color.White, fontWeight = FontWeight.Bold)
-                    }
+                    com.infinity.ai.ui.components.GoneEmblem(size = 46.dp)
                     Column {
-                        Text("Infinity User", style = MaterialTheme.typography.titleMedium,
+                        Text("G-ONE User", style = MaterialTheme.typography.titleMedium,
                             color = if (isDarkTheme) TextPrimary else TextPrimaryLight,
                             fontWeight = FontWeight.SemiBold)
-                        Text("AI Command Center", style = MaterialTheme.typography.bodySmall,
+                        Text("Edge Health Intelligence", style = MaterialTheme.typography.bodySmall,
                             color = if (isDarkTheme) TextSecondary else TextSecondaryLight)
                     }
                     Spacer(Modifier.weight(1f))
@@ -133,6 +123,17 @@ fun SettingsScreen(isDarkTheme: Boolean, bottomPadding: Dp, onToggleTheme: () ->
 
             Spacer(Modifier.height(12.dp))
 
+            SimulatorSection(
+                isDarkTheme = isDarkTheme,
+                isRunning   = simRunning,
+                scenario    = healthViewModel.simulatorScenario,
+                onStart     = { healthViewModel.startSimulator(it) },
+                onStop      = { healthViewModel.stopSimulator() },
+                onSwitch    = { healthViewModel.switchSimulatorScenario(it) }
+            )
+
+            Spacer(Modifier.height(12.dp))
+
             SettingsSection("About", isDarkTheme) {
                 SettingsRow(Icons.Default.Info, "Version", "1.0.0",
                     if (isDarkTheme) TextSecondary else TextSecondaryLight, isDarkTheme)
@@ -140,18 +141,18 @@ fun SettingsScreen(isDarkTheme: Boolean, bottomPadding: Dp, onToggleTheme: () ->
                 SettingsRow(Icons.Default.Code, "Build", "Production Foundation",
                     if (isDarkTheme) TextSecondary else TextSecondaryLight, isDarkTheme)
                 SettingsDivider(isDarkTheme)
-                SettingsRow(Icons.Default.Memory, "Engine", "Infinity-X1",
+                SettingsRow(Icons.Default.Memory, "Engine", "G-ONE Neural Engine",
                     if (isDarkTheme) TextSecondary else TextSecondaryLight, isDarkTheme)
             }
 
             Spacer(Modifier.height(48.dp))
 
-            Column(modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("∞", fontSize = 24.sp,
-                    color = if (isDarkTheme) TextDisabled else TextSecondaryLight.copy(0.4f))
-                Spacer(Modifier.height(4.dp))
-                Text("Infinity AI · v1.0.0", style = MaterialTheme.typography.labelSmall,
+            Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                com.infinity.ai.ui.components.GoneEmblem(size = 28.dp,
+                    tint = if (isDarkTheme) TextDisabled else TextSecondaryLight.copy(0.4f))
+                Spacer(Modifier.height(6.dp))
+                Text("G-ONE · Edge Health Intelligence v1.0.0",
+                    style = MaterialTheme.typography.labelSmall,
                     color = if (isDarkTheme) TextDisabled else TextSecondaryLight.copy(0.4f))
             }
 
@@ -160,6 +161,141 @@ fun SettingsScreen(isDarkTheme: Boolean, bottomPadding: Dp, onToggleTheme: () ->
     }
 }
 
+// ── Simulator Section ─────────────────────────────────────────────────────────
+
+@Composable
+private fun SimulatorSection(
+    isDarkTheme : Boolean,
+    isRunning   : Boolean,
+    scenario    : SimulatorScenario,
+    onStart     : (SimulatorScenario) -> Unit,
+    onStop      : () -> Unit,
+    onSwitch    : (SimulatorScenario) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Column(modifier = Modifier.padding(horizontal = 20.dp)) {
+        Text(
+            "HEALTH SIMULATOR",
+            style = MaterialTheme.typography.labelSmall,
+            color = if (isDarkTheme) TextSecondary else TextSecondaryLight,
+            fontWeight = FontWeight.Medium,
+            letterSpacing = 1.sp,
+            modifier = Modifier.padding(bottom = 8.dp, start = 4.dp)
+        )
+        GlassCard(darkTheme = isDarkTheme, modifier = Modifier.fillMaxWidth()) {
+            // Toggle row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(
+                            if (isRunning) SuccessGreen.copy(0.15f) else Blue500.copy(0.12f),
+                            RoundedCornerShape(10.dp)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.MonitorHeart, null,
+                        tint = if (isRunning) SuccessGreen else Blue500,
+                        modifier = Modifier.size(18.dp))
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Mock Vitals Feed",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = if (isDarkTheme) TextPrimary else TextPrimaryLight,
+                        fontWeight = FontWeight.Medium)
+                    Text(
+                        if (isRunning) "Running · ${scenario.label}" else "Stopped · no hardware needed",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (isRunning) SuccessGreen
+                                else if (isDarkTheme) TextSecondary else TextSecondaryLight
+                    )
+                }
+                Switch(
+                    checked = isRunning,
+                    onCheckedChange = { on -> if (on) onStart(scenario) else onStop() },
+                    colors = SwitchDefaults.colors(
+                        checkedTrackColor = SuccessGreen,
+                        checkedThumbColor = Color.White
+                    )
+                )
+            }
+
+            // Scenario list — shown when running or user tapped "Choose scenario"
+            if (isRunning || expanded) {
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 10.dp),
+                    color = if (isDarkTheme) Color.White.copy(0.05f) else Color.Black.copy(0.05f)
+                )
+                Text("SCENARIO",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isDarkTheme) TextSecondary else TextSecondaryLight,
+                    letterSpacing = 1.sp)
+                Spacer(Modifier.height(8.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    SimulatorScenario.entries.forEach { s ->
+                        val selected = s == scenario
+                        val dotColor = when (s) {
+                            SimulatorScenario.NORMAL      -> SuccessGreen
+                            SimulatorScenario.STRESS_TEST -> WarnAmber
+                            SimulatorScenario.FEVER       -> WarnAmber
+                            else                          -> ErrorRed
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(
+                                    if (selected) Blue500.copy(0.12f)
+                                    else if (isDarkTheme) Color.White.copy(0.03f) else Color.Black.copy(0.03f)
+                                )
+                                .border(0.5.dp,
+                                    if (selected) Blue500.copy(0.4f) else Color.Transparent,
+                                    RoundedCornerShape(10.dp))
+                                .clickable { if (isRunning) onSwitch(s) else onStart(s) }
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Box(modifier = Modifier.size(8.dp).background(dotColor, CircleShape))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(s.label,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = if (isDarkTheme) TextPrimary else TextPrimaryLight,
+                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
+                                Text(s.description,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (isDarkTheme) TextSecondary else TextSecondaryLight)
+                            }
+                            if (selected) {
+                                Icon(Icons.Default.CheckCircle, null,
+                                    tint = Blue500, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
+                }
+            } else {
+                Spacer(Modifier.height(8.dp))
+                TextButton(
+                    onClick = { expanded = true },
+                    contentPadding = PaddingValues(0.dp)
+                ) {
+                    Text("Choose scenario",
+                        style = MaterialTheme.typography.labelMedium, color = Blue500)
+                    Icon(Icons.Default.ExpandMore, null,
+                        tint = Blue500, modifier = Modifier.size(16.dp))
+                }
+            }
+        }
+    }
+}
+
+// ── Shared helpers ────────────────────────────────────────────────────────────
+
 @Composable
 private fun SettingsSection(title: String, isDarkTheme: Boolean, content: @Composable ColumnScope.() -> Unit) {
     Column(modifier = Modifier.padding(horizontal = 20.dp)) {
@@ -167,9 +303,7 @@ private fun SettingsSection(title: String, isDarkTheme: Boolean, content: @Compo
             color = if (isDarkTheme) TextSecondary else TextSecondaryLight,
             fontWeight = FontWeight.Medium, letterSpacing = 1.sp,
             modifier = Modifier.padding(bottom = 8.dp, start = 4.dp))
-        GlassCard(darkTheme = isDarkTheme, modifier = Modifier.fillMaxWidth()) {
-            content()
-        }
+        GlassCard(darkTheme = isDarkTheme, modifier = Modifier.fillMaxWidth()) { content() }
     }
 }
 
@@ -189,8 +323,7 @@ private fun SettingsToggle(
     Row(modifier = Modifier.fillMaxWidth().clickable(onClick = onToggle),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Box(modifier = Modifier.size(36.dp)
-            .background(Blue500.copy(0.15f), RoundedCornerShape(10.dp)),
+        Box(modifier = Modifier.size(36.dp).background(Blue500.copy(0.15f), RoundedCornerShape(10.dp)),
             contentAlignment = Alignment.Center) {
             Icon(icon, null, tint = Blue500, modifier = Modifier.size(18.dp))
         }
@@ -201,10 +334,7 @@ private fun SettingsToggle(
                 color = if (isDarkTheme) TextSecondary else TextSecondaryLight)
         }
         Switch(checked = checked, onCheckedChange = { onToggle() },
-            colors = SwitchDefaults.colors(
-                checkedTrackColor = Blue500,
-                checkedThumbColor = Color.White
-            ))
+            colors = SwitchDefaults.colors(checkedTrackColor = Blue500, checkedThumbColor = Color.White))
     }
 }
 
@@ -214,8 +344,7 @@ private fun SettingsRow(icon: ImageVector, title: String, value: String,
     Row(modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Box(modifier = Modifier.size(36.dp)
-            .background(iconTint.copy(0.12f), RoundedCornerShape(10.dp)),
+        Box(modifier = Modifier.size(36.dp).background(iconTint.copy(0.12f), RoundedCornerShape(10.dp)),
             contentAlignment = Alignment.Center) {
             Icon(icon, null, tint = iconTint, modifier = Modifier.size(18.dp))
         }
@@ -234,13 +363,9 @@ private fun SettingsRowBadge(icon: ImageVector, title: String, subtitle: String,
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Box(modifier = Modifier.size(36.dp)
-            .background(
-                if (granted) SuccessGreen.copy(0.12f) else ErrorRed.copy(0.12f),
-                RoundedCornerShape(10.dp)),
+            .background(if (granted) SuccessGreen.copy(0.12f) else ErrorRed.copy(0.12f), RoundedCornerShape(10.dp)),
             contentAlignment = Alignment.Center) {
-            Icon(icon, null,
-                tint = if (granted) SuccessGreen else ErrorRed,
-                modifier = Modifier.size(18.dp))
+            Icon(icon, null, tint = if (granted) SuccessGreen else ErrorRed, modifier = Modifier.size(18.dp))
         }
         Column(modifier = Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyLarge,
@@ -249,9 +374,7 @@ private fun SettingsRowBadge(icon: ImageVector, title: String, subtitle: String,
                 color = if (isDarkTheme) TextSecondary else TextSecondaryLight)
         }
         Box(modifier = Modifier
-            .background(
-                if (granted) SuccessGreen.copy(0.12f) else ErrorRed.copy(0.12f),
-                RoundedCornerShape(6.dp))
+            .background(if (granted) SuccessGreen.copy(0.12f) else ErrorRed.copy(0.12f), RoundedCornerShape(6.dp))
             .padding(horizontal = 8.dp, vertical = 3.dp)) {
             Text(if (granted) "Granted" else "Denied",
                 style = MaterialTheme.typography.labelSmall,

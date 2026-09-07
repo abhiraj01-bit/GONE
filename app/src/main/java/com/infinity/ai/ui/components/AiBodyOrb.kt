@@ -16,18 +16,21 @@ import androidx.compose.ui.unit.dp
 import com.infinity.ai.ai.state.AIInferenceState
 
 /**
- * OrbState — a simplified state enum used only by the orb for animation decisions.
- * We map both the old AiState and new AIInferenceState to this.
+ * OrbState — simplified state enum for orb animation decisions.
+ * Maps both AIInferenceState and health pipeline states.
  */
-enum class OrbState { Idle, Loading, Thinking, Responding, Error }
+enum class OrbState {
+    Idle, Loading, Thinking, Responding, Error,
+    Monitoring, Reading, Analyzing, AnomalyDetected, AiExplaining, AlertReady
+}
 
 /** Map AIInferenceState → OrbState */
 fun AIInferenceState.toOrbState(): OrbState = when (this) {
-    is AIInferenceState.Idle      -> OrbState.Idle
-    is AIInferenceState.Loading   -> OrbState.Loading
-    is AIInferenceState.Thinking  -> OrbState.Thinking
+    is AIInferenceState.Idle       -> OrbState.Idle
+    is AIInferenceState.Loading    -> OrbState.Loading
+    is AIInferenceState.Thinking   -> OrbState.Thinking
     is AIInferenceState.Responding -> OrbState.Responding
-    is AIInferenceState.Error     -> OrbState.Error
+    is AIInferenceState.Error      -> OrbState.Error
 }
 
 @Composable
@@ -41,25 +44,43 @@ fun AiBodyOrb(
 
     // ── Pulse (breathing) ────────────────────────────────────────────────────
     val pulseSpec = when (orbState) {
-        OrbState.Idle      -> tween<Float>(2800, easing = EaseInOut)
-        OrbState.Loading   -> tween(1200, easing = EaseInOut)
-        OrbState.Thinking  -> tween(1000, easing = EaseInOut)
-        OrbState.Responding -> tween(900, easing = EaseInOut)
-        OrbState.Error     -> tween(400,  easing = EaseInOut)
+        OrbState.Idle            -> tween<Float>(2800, easing = EaseInOut)
+        OrbState.Loading         -> tween(1200, easing = EaseInOut)
+        OrbState.Thinking        -> tween(1000, easing = EaseInOut)
+        OrbState.Responding      -> tween(900,  easing = EaseInOut)
+        OrbState.Error           -> tween(400,  easing = EaseInOut)
+        OrbState.Monitoring      -> tween(2000, easing = EaseInOut)
+        OrbState.Reading         -> tween(800,  easing = EaseInOut)
+        OrbState.Analyzing       -> tween(1000, easing = EaseInOut)
+        OrbState.AnomalyDetected -> tween(500,  easing = EaseInOut)
+        OrbState.AiExplaining    -> tween(900,  easing = EaseInOut)
+        OrbState.AlertReady      -> tween(600,  easing = EaseInOut)
     }
     val pulseMin = when (orbState) {
-        OrbState.Idle      -> 0.96f
-        OrbState.Loading   -> 0.92f
-        OrbState.Thinking  -> 0.93f
-        OrbState.Responding -> 0.92f
-        OrbState.Error     -> 0.88f
+        OrbState.Idle            -> 0.96f
+        OrbState.Loading         -> 0.92f
+        OrbState.Thinking        -> 0.93f
+        OrbState.Responding      -> 0.92f
+        OrbState.Error           -> 0.88f
+        OrbState.Monitoring      -> 0.95f
+        OrbState.Reading         -> 0.91f
+        OrbState.Analyzing       -> 0.93f
+        OrbState.AnomalyDetected -> 0.86f
+        OrbState.AiExplaining    -> 0.92f
+        OrbState.AlertReady      -> 0.88f
     }
     val pulseMax = when (orbState) {
-        OrbState.Idle      -> 1.04f
-        OrbState.Loading   -> 1.06f
-        OrbState.Thinking  -> 1.07f
-        OrbState.Responding -> 1.08f
-        OrbState.Error     -> 1.12f
+        OrbState.Idle            -> 1.04f
+        OrbState.Loading         -> 1.06f
+        OrbState.Thinking        -> 1.07f
+        OrbState.Responding      -> 1.08f
+        OrbState.Error           -> 1.12f
+        OrbState.Monitoring      -> 1.05f
+        OrbState.Reading         -> 1.08f
+        OrbState.Analyzing       -> 1.07f
+        OrbState.AnomalyDetected -> 1.14f
+        OrbState.AiExplaining    -> 1.08f
+        OrbState.AlertReady      -> 1.12f
     }
     val pulse by inf.animateFloat(
         initialValue = pulseMin, targetValue = pulseMax,
@@ -69,10 +90,14 @@ fun AiBodyOrb(
 
     // ── Rotation ─────────────────────────────────────────────────────────────
     val rotationSpeed = when (orbState) {
-        OrbState.Thinking  -> 6000
-        OrbState.Responding -> 4000
-        OrbState.Loading   -> 8000
-        else               -> 20000
+        OrbState.Thinking        -> 6000
+        OrbState.Responding      -> 4000
+        OrbState.Loading         -> 8000
+        OrbState.Analyzing       -> 5000
+        OrbState.AiExplaining    -> 4500
+        OrbState.AnomalyDetected -> 3000
+        OrbState.Monitoring      -> 15000
+        else                     -> 20000
     }
     val rotation by inf.animateFloat(
         initialValue = 0f, targetValue = 360f,
@@ -97,47 +122,77 @@ fun AiBodyOrb(
     // ── Colors ────────────────────────────────────────────────────────────────
     val coreInner by animateColorAsState(
         targetValue = when (orbState) {
-            OrbState.Idle      -> if (isDarkTheme) Color(0xFF4A7FC1) else Color(0xFF5B8FD4)
-            OrbState.Loading   -> Color(0xFF6366F1)
-            OrbState.Thinking  -> Color(0xFF7C3AED)
-            OrbState.Responding -> Color(0xFF0891B2)
-            OrbState.Error     -> Color(0xFFDC2626)
+            OrbState.Idle            -> if (isDarkTheme) Color(0xFF4A7FC1) else Color(0xFF5B8FD4)
+            OrbState.Loading         -> Color(0xFF6366F1)
+            OrbState.Thinking        -> Color(0xFF7C3AED)
+            OrbState.Responding      -> Color(0xFF0891B2)
+            OrbState.Error           -> Color(0xFFDC2626)
+            OrbState.Monitoring      -> Color(0xFF059669)
+            OrbState.Reading         -> Color(0xFF0891B2)
+            OrbState.Analyzing       -> Color(0xFF7C3AED)
+            OrbState.AnomalyDetected -> Color(0xFFDC2626)
+            OrbState.AiExplaining    -> Color(0xFF0891B2)
+            OrbState.AlertReady      -> Color(0xFFD97706)
         },
         animationSpec = tween(700), label = "coreInner"
     )
     val coreMid by animateColorAsState(
         targetValue = when (orbState) {
-            OrbState.Idle      -> if (isDarkTheme) Color(0xFF1E3A5F) else Color(0xFF93C5FD)
-            OrbState.Loading   -> Color(0xFF312E81)
-            OrbState.Thinking  -> Color(0xFF4C1D95)
-            OrbState.Responding -> Color(0xFF164E63)
-            OrbState.Error     -> Color(0xFF7F1D1D)
+            OrbState.Idle            -> if (isDarkTheme) Color(0xFF1E3A5F) else Color(0xFF93C5FD)
+            OrbState.Loading         -> Color(0xFF312E81)
+            OrbState.Thinking        -> Color(0xFF4C1D95)
+            OrbState.Responding      -> Color(0xFF164E63)
+            OrbState.Error           -> Color(0xFF7F1D1D)
+            OrbState.Monitoring      -> Color(0xFF064E3B)
+            OrbState.Reading         -> Color(0xFF164E63)
+            OrbState.Analyzing       -> Color(0xFF4C1D95)
+            OrbState.AnomalyDetected -> Color(0xFF7F1D1D)
+            OrbState.AiExplaining    -> Color(0xFF164E63)
+            OrbState.AlertReady      -> Color(0xFF78350F)
         },
         animationSpec = tween(700), label = "coreMid"
     )
     val ringColor by animateColorAsState(
         targetValue = when (orbState) {
-            OrbState.Idle      -> Color(0xFF3B82F6).copy(alpha = 0.18f)
-            OrbState.Loading   -> Color(0xFF6366F1).copy(alpha = 0.30f)
-            OrbState.Thinking  -> Color(0xFF8B5CF6).copy(alpha = 0.28f)
-            OrbState.Responding -> Color(0xFF06B6D4).copy(alpha = 0.32f)
-            OrbState.Error     -> Color(0xFFEF4444).copy(alpha = 0.30f)
+            OrbState.Idle            -> Color(0xFF3B82F6).copy(alpha = 0.18f)
+            OrbState.Loading         -> Color(0xFF6366F1).copy(alpha = 0.30f)
+            OrbState.Thinking        -> Color(0xFF8B5CF6).copy(alpha = 0.28f)
+            OrbState.Responding      -> Color(0xFF06B6D4).copy(alpha = 0.32f)
+            OrbState.Error           -> Color(0xFFEF4444).copy(alpha = 0.30f)
+            OrbState.Monitoring      -> Color(0xFF10B981).copy(alpha = 0.28f)
+            OrbState.Reading         -> Color(0xFF06B6D4).copy(alpha = 0.28f)
+            OrbState.Analyzing       -> Color(0xFF8B5CF6).copy(alpha = 0.28f)
+            OrbState.AnomalyDetected -> Color(0xFFEF4444).copy(alpha = 0.40f)
+            OrbState.AiExplaining    -> Color(0xFF06B6D4).copy(alpha = 0.32f)
+            OrbState.AlertReady      -> Color(0xFFF59E0B).copy(alpha = 0.35f)
         },
         animationSpec = tween(700), label = "ringColor"
     )
     val glowColor by animateColorAsState(
         targetValue = when (orbState) {
-            OrbState.Idle      -> Color(0xFF3B82F6).copy(alpha = 0.08f)
-            OrbState.Loading   -> Color(0xFF6366F1).copy(alpha = 0.14f)
-            OrbState.Thinking  -> Color(0xFF7C3AED).copy(alpha = 0.16f)
-            OrbState.Responding -> Color(0xFF06B6D4).copy(alpha = 0.18f)
-            OrbState.Error     -> Color(0xFFEF4444).copy(alpha = 0.18f)
+            OrbState.Idle            -> Color(0xFF3B82F6).copy(alpha = 0.08f)
+            OrbState.Loading         -> Color(0xFF6366F1).copy(alpha = 0.14f)
+            OrbState.Thinking        -> Color(0xFF7C3AED).copy(alpha = 0.16f)
+            OrbState.Responding      -> Color(0xFF06B6D4).copy(alpha = 0.18f)
+            OrbState.Error           -> Color(0xFFEF4444).copy(alpha = 0.18f)
+            OrbState.Monitoring      -> Color(0xFF10B981).copy(alpha = 0.12f)
+            OrbState.Reading         -> Color(0xFF06B6D4).copy(alpha = 0.14f)
+            OrbState.Analyzing       -> Color(0xFF7C3AED).copy(alpha = 0.16f)
+            OrbState.AnomalyDetected -> Color(0xFFEF4444).copy(alpha = 0.22f)
+            OrbState.AiExplaining    -> Color(0xFF06B6D4).copy(alpha = 0.18f)
+            OrbState.AlertReady      -> Color(0xFFF59E0B).copy(alpha = 0.20f)
         },
         animationSpec = tween(700), label = "glowColor"
     )
 
-    val showRipple = orbState == OrbState.Responding || orbState == OrbState.Loading
-    val showArcs   = orbState == OrbState.Thinking || orbState == OrbState.Responding || orbState == OrbState.Loading
+    val showRipple = orbState in setOf(
+        OrbState.Responding, OrbState.Loading, OrbState.Reading,
+        OrbState.AnomalyDetected, OrbState.AlertReady
+    )
+    val showArcs = orbState in setOf(
+        OrbState.Thinking, OrbState.Responding, OrbState.Loading,
+        OrbState.Analyzing, OrbState.AiExplaining, OrbState.Monitoring
+    )
 
     Box(modifier = modifier.size(size), contentAlignment = Alignment.Center) {
         Canvas(modifier = Modifier.fillMaxSize()) {

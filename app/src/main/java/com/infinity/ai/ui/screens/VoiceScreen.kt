@@ -92,7 +92,7 @@ fun VoiceScreen(
                         is AIInferenceState.Idle      -> "Tap mic to speak"
                         is AIInferenceState.Loading   -> "Loading model..."
                         is AIInferenceState.Thinking  -> "Processing..."
-                        is AIInferenceState.Responding -> "Infinity is responding"
+                        is AIInferenceState.Responding -> "G-ONE is responding"
                         is AIInferenceState.Error     -> "Something went wrong"
                     },
                     style = MaterialTheme.typography.titleMedium,

@@ -348,104 +348,43 @@ private fun BubbleCanvas(state: BubbleState, dragging: Boolean) {
             }
         }
 
-        // ── Infinity symbol ───────────────────────────────────────────────────
-        when (state) {
-            BubbleState.IDLE, BubbleState.DONE ->
-                drawInfinityStatic(cx, cy, r * 0.40f)
-
-            BubbleState.THINKING ->
-                drawInfinityTrace(cx, cy, r * 0.40f, tracePhase, strokeAlpha = 0.75f)
-
-            BubbleState.SCANNING ->
-                drawInfinityStatic(cx, cy, r * 0.40f, alpha = 0.55f)
-
-            BubbleState.GENERATING ->
-                drawInfinityTrace(cx, cy, r * 0.40f, tracePhase, strokeAlpha = 0.85f)
-        }
+        // ── GONE Emblem Symbol ───────────────────────────────────────────────────
+        drawGoneEmblem(cx, cy, r * 0.45f, state, tracePhase)
     }
 }
 
-// ── Static infinity glyph ─────────────────────────────────────────────────────
+// ── Floating Bubble GONE Emblem renderer ─────────────────────────────────────
 
-private fun DrawScope.drawInfinityStatic(
-    cx: Float, cy: Float, halfWidth: Float,
-    alpha: Float = 0.82f
+private fun DrawScope.drawGoneEmblem(
+    cx: Float, cy: Float, radius: Float,
+    state: BubbleState, phase: Float
 ) {
-    val path = infinityPath(cx, cy, halfWidth)
-    drawPath(
-        path  = path,
-        color = Color(0xCC303030).copy(alpha = alpha),
-        style = Stroke(width = 2.2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
-    )
-}
+    val strokeW = radius * 0.28f
+    val darkColor = Color(0xFF1E293B)
 
-// ── Animated trace infinity ───────────────────────────────────────────────────
-
-private fun DrawScope.drawInfinityTrace(
-    cx: Float, cy: Float, halfWidth: Float,
-    phase: Float, strokeAlpha: Float
-) {
-    val path = infinityPath(cx, cy, halfWidth)
-
-    // Ghost full path (very faint)
-    drawPath(
-        path  = path,
-        color = Color(0x22303030),
-        style = Stroke(width = 2.2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+    // Outer 270-degree precision geometric arc ("G" mark)
+    drawArc(
+        color = darkColor.copy(alpha = if (state == BubbleState.SCANNING) 0.55f else 0.85f),
+        startAngle = 45f + (if (state == BubbleState.THINKING || state == BubbleState.GENERATING) phase * 360f else 0f),
+        sweepAngle = 270f,
+        useCenter = false,
+        topLeft = Offset(cx - radius, cy - radius),
+        size = Size(radius * 2, radius * 2),
+        style = Stroke(width = strokeW, cap = StrokeCap.Round)
     )
 
-    // Animated leading segment
-    val measure = android.graphics.PathMeasure(path.asAndroidPath(), false)
-    val total   = measure.length
-    val head    = phase
-    val tail    = (phase - 0.35f).coerceAtLeast(0f)
-    val dst     = android.graphics.Path()
-    measure.getSegment(tail * total, head * total, dst, true)
-    drawPath(
-        path  = dst.asComposePath(),
-        color = Color(0xFF303030).copy(alpha = strokeAlpha),
-        style = Stroke(width = 2.2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+    // Inner edge signal node
+    val nodeRadius = strokeW * 0.9f
+    drawCircle(
+        color = darkColor,
+        radius = nodeRadius,
+        center = Offset(cx, cy)
     )
-}
 
-// ── Infinity lemniscate path builder ─────────────────────────────────────────
-// Parametric lemniscate of Bernoulli approximated with cubic bezier curves.
-// Two mirrored lobes forming the ∞ symbol, centred at (cx, cy).
-
-private fun infinityPath(cx: Float, cy: Float, hw: Float): Path {
-    // hw = half-width of the symbol (distance from centre to loop tip)
-    val hh = hw * 0.48f   // half-height of each lobe
-    val cp = hw * 0.60f   // bezier control point offset
-
-    return Path().apply {
-        // Start at centre
-        moveTo(cx, cy)
-
-        // Right lobe — upper arc
-        cubicTo(
-            cx + cp * 0.5f, cy - hh,
-            cx + hw,        cy - hh,
-            cx + hw,        cy
-        )
-        // Right lobe — lower arc
-        cubicTo(
-            cx + hw,        cy + hh,
-            cx + cp * 0.5f, cy + hh,
-            cx,             cy
-        )
-
-        // Left lobe — lower arc
-        cubicTo(
-            cx - cp * 0.5f, cy + hh,
-            cx - hw,        cy + hh,
-            cx - hw,        cy
-        )
-        // Left lobe — upper arc
-        cubicTo(
-            cx - hw,        cy - hh,
-            cx - cp * 0.5f, cy - hh,
-            cx,             cy
-        )
-        close()
-    }
+    // Highlight dot on signal node
+    drawCircle(
+        color = Color.White.copy(alpha = 0.9f),
+        radius = nodeRadius * 0.35f,
+        center = Offset(cx - nodeRadius * 0.25f, cy - nodeRadius * 0.25f)
+    )
 }
