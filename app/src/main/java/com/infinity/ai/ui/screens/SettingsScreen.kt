@@ -2,7 +2,10 @@ package com.infinity.ai.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -26,6 +29,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.infinity.ai.ai.state.AIInferenceState
+import com.infinity.ai.data.EmergencyAlertPreference
 import com.infinity.ai.data.ReportSharingPreference
 import com.infinity.ai.health.mock.SimulatorScenario
 import com.infinity.ai.ui.components.GradientBackground
@@ -144,6 +148,10 @@ fun SettingsScreen(isDarkTheme: Boolean, bottomPadding: Dp, onToggleTheme: () ->
 
             Spacer(Modifier.height(12.dp))
 
+            EmergencyAlertsSection(isDarkTheme = isDarkTheme)
+
+            Spacer(Modifier.height(12.dp))
+
             SettingsSection("About", isDarkTheme) {
                 SettingsRow(Icons.Default.Info, "Version", "1.0.0",
                     if (isDarkTheme) TextSecondary else TextSecondaryLight, isDarkTheme)
@@ -168,6 +176,268 @@ fun SettingsScreen(isDarkTheme: Boolean, bottomPadding: Dp, onToggleTheme: () ->
 
             Spacer(Modifier.height(bottomPadding + 16.dp))
         }
+    }
+}
+
+// ── Emergency Alerts Section ─────────────────────────────────────────────────
+
+@Composable
+private fun EmergencyAlertsSection(isDarkTheme: Boolean) {
+    val context = LocalContext.current
+    val pref    = remember { EmergencyAlertPreference(context) }
+    val scope   = rememberCoroutineScope()
+
+    val alertsEnabled   by pref.alertsEnabled.collectAsState(initial = false)
+    val contactNumber   by pref.contactNumber.collectAsState(initial = "")
+    val smsEnabled      by pref.smsEnabled.collectAsState(initial = true)
+    val callEnabled     by pref.callEnabled.collectAsState(initial = false)
+    val locationEnabled by pref.locationEnabled.collectAsState(initial = false)
+
+    var numberDraft by remember(contactNumber) { mutableStateOf(contactNumber) }
+
+    // Runtime SMS permission state — re-checked on each recomposition
+    var smsGranted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) ==
+                    PackageManager.PERMISSION_GRANTED
+        )
+    }
+    val smsPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> smsGranted = granted }
+
+    val numberError = when {
+        alertsEnabled && numberDraft.isBlank()       -> "Enter an emergency contact number."
+        alertsEnabled && !pref.isValidNumber(numberDraft) -> "Enter a valid phone number (7–15 digits)."
+        else -> null
+    }
+
+    Column(modifier = Modifier.padding(horizontal = 20.dp)) {
+        Text(
+            "EMERGENCY ALERTS",
+            style = MaterialTheme.typography.labelSmall,
+            color = if (isDarkTheme) TextSecondary else TextSecondaryLight,
+            fontWeight = FontWeight.Medium,
+            letterSpacing = 1.sp,
+            modifier = Modifier.padding(bottom = 8.dp, start = 4.dp)
+        )
+        GlassCard(darkTheme = isDarkTheme, modifier = Modifier.fillMaxWidth()) {
+
+            // ── Master toggle ──────────────────────────────────────────────────
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(
+                            if (alertsEnabled) ErrorRed.copy(0.15f) else Blue500.copy(0.12f),
+                            RoundedCornerShape(10.dp)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.NotificationsActive, null,
+                        tint = if (alertsEnabled) ErrorRed else Blue500,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Emergency Alerts",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = if (isDarkTheme) TextPrimary else TextPrimaryLight,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        "Send SMS alert when a critical health pattern is detected.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (isDarkTheme) TextSecondary else TextSecondaryLight
+                    )
+                }
+                Switch(
+                    checked = alertsEnabled,
+                    onCheckedChange = { scope.launch { pref.setAlertsEnabled(it) } },
+                    colors = SwitchDefaults.colors(
+                        checkedTrackColor = ErrorRed,
+                        checkedThumbColor = Color.White
+                    )
+                )
+            }
+
+            if (alertsEnabled) {
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 10.dp),
+                    color = if (isDarkTheme) Color.White.copy(0.05f) else Color.Black.copy(0.05f)
+                )
+
+                // ── Contact number ─────────────────────────────────────────────
+                Text(
+                    "EMERGENCY CONTACT",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isDarkTheme) TextSecondary else TextSecondaryLight,
+                    letterSpacing = 1.sp
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = numberDraft,
+                    onValueChange = { numberDraft = it },
+                    placeholder = {
+                        Text(
+                            "+91XXXXXXXXXX",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (isDarkTheme) TextDisabled else TextSecondaryLight.copy(0.5f)
+                        )
+                    },
+                    singleLine = true,
+                    isError = numberError != null,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Phone,
+                        imeAction    = ImeAction.Done
+                    ),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor   = ErrorRed,
+                        unfocusedBorderColor = if (isDarkTheme) Color.White.copy(0.12f) else Color.Black.copy(0.12f),
+                        errorBorderColor     = ErrorRed,
+                        focusedTextColor     = if (isDarkTheme) TextPrimary else TextPrimaryLight,
+                        unfocusedTextColor   = if (isDarkTheme) TextPrimary else TextPrimaryLight,
+                        cursorColor          = ErrorRed
+                    ),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    trailingIcon = {
+                        if (numberDraft.isNotBlank() && pref.isValidNumber(numberDraft)) {
+                            IconButton(onClick = { scope.launch { pref.setContactNumber(numberDraft) } }) {
+                                Icon(Icons.Default.Check, "Save", tint = SuccessGreen,
+                                    modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    }
+                )
+                if (numberError != null) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(numberError,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = ErrorRed)
+                } else if (contactNumber.isNotBlank() && pref.isValidNumber(contactNumber)) {
+                    Spacer(Modifier.height(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Icon(Icons.Default.CheckCircle, null,
+                            tint = SuccessGreen, modifier = Modifier.size(12.dp))
+                        Text("Alerts will be sent to $contactNumber",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = SuccessGreen)
+                    }
+                }
+                // Auto-save valid number on change
+                LaunchedEffect(numberDraft) {
+                    if (pref.isValidNumber(numberDraft)) pref.setContactNumber(numberDraft)
+                }
+
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 10.dp),
+                    color = if (isDarkTheme) Color.White.copy(0.05f) else Color.Black.copy(0.05f)
+                )
+
+                // ── SMS toggle ─────────────────────────────────────────────────
+                EmergencySubToggle(
+                    icon      = Icons.Default.Sms,
+                    title     = "Send SMS on Critical Risk",
+                    checked   = smsEnabled,
+                    tint      = ErrorRed,
+                    isDark    = isDarkTheme,
+                    onToggle  = { scope.launch { pref.setSmsEnabled(it) } }
+                )
+
+                // SMS permission nudge
+                if (smsEnabled && !smsGranted) {
+                    Spacer(Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(WarnAmber.copy(0.1f))
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Warning, null,
+                            tint = WarnAmber, modifier = Modifier.size(14.dp))
+                        Text(
+                            "SMS permission required.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = WarnAmber,
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextButton(
+                            onClick = { smsPermLauncher.launch(Manifest.permission.SEND_SMS) },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                        ) {
+                            Text("Grant",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = WarnAmber,
+                                fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                SettingsDivider(isDarkTheme)
+
+                // ── Call toggle ────────────────────────────────────────────────
+                EmergencySubToggle(
+                    icon     = Icons.Default.Call,
+                    title    = "Call Alert on Critical Risk",
+                    checked  = callEnabled,
+                    tint     = ErrorRed,
+                    isDark   = isDarkTheme,
+                    onToggle = { scope.launch { pref.setCallEnabled(it) } }
+                )
+
+                SettingsDivider(isDarkTheme)
+
+                // ── Location toggle ────────────────────────────────────────────
+                EmergencySubToggle(
+                    icon     = Icons.Default.LocationOn,
+                    title    = "Include Location in SMS",
+                    checked  = locationEnabled,
+                    tint     = Blue500,
+                    isDark   = isDarkTheme,
+                    onToggle = { scope.launch { pref.setLocationEnabled(it) } }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmergencySubToggle(
+    icon: ImageVector, title: String,
+    checked: Boolean, tint: Color,
+    isDark: Boolean, onToggle: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Icon(icon, null, tint = tint, modifier = Modifier.size(16.dp))
+        Text(
+            title,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (isDark) TextPrimary else TextPrimaryLight,
+            modifier = Modifier.weight(1f)
+        )
+        Switch(
+            checked = checked,
+            onCheckedChange = onToggle,
+            colors = SwitchDefaults.colors(
+                checkedTrackColor = tint,
+                checkedThumbColor = Color.White
+            )
+        )
     }
 }
 

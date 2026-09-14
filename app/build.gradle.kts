@@ -121,6 +121,7 @@ dependencies {
     ksp(libs.androidx.room.compiler)
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.okhttp)
+    implementation(libs.play.services.location)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

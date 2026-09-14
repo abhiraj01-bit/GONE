@@ -11,6 +11,7 @@ import com.infinity.ai.health.data.HealthReportEntity
 import com.infinity.ai.health.data.VitalsReading
 import com.infinity.ai.health.mock.SimulatorScenario
 import com.infinity.ai.health.repository.HealthRepository
+import com.infinity.ai.health.sharing.EmergencyAlertManager
 import com.infinity.ai.health.sharing.ReportSharingService
 import com.infinity.ai.ui.components.OrbState
 import kotlinx.coroutines.flow.*
@@ -177,6 +178,12 @@ class HealthViewModel(app: Application) : AndroidViewModel(app) {
                     launch {
                         try { ReportSharingService.maybeShareReport(getApplication(), reportId) }
                         catch (e: Exception) { Log.w("ReportSharing", "Sharing error (non-fatal): ${e.message}") }
+                    }
+                    // ── Additive: attempt emergency alert AFTER report is saved ──
+                    // Completely isolated — any failure here never affects the report.
+                    launch {
+                        try { EmergencyAlertManager.maybeAlert(getApplication(), reportId) }
+                        catch (e: Exception) { Log.w("EmergencyAlert", "Alert error (non-fatal): ${e.message}") }
                     }
                 },
                 onFailure = { e ->

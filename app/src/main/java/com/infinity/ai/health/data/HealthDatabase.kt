@@ -14,7 +14,7 @@ import androidx.room.RoomDatabase
         DeviceEntity::class,
         HealthReportEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 abstract class HealthDatabase : RoomDatabase() {

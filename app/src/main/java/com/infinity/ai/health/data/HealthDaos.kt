@@ -138,6 +138,10 @@ interface HealthReportDao {
         emailSentAt   : Long?,
         emailRecipient: String
     )
+
+    /** Mark that an emergency alert was attempted for this report — prevents duplicate sends. */
+    @Query("UPDATE health_reports SET emergencyAlertSent = 1 WHERE id = :id")
+    suspend fun markEmergencyAlertSent(id: Long)
 }
 
 @Dao

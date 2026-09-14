@@ -137,7 +137,12 @@ data class HealthReportEntity(
     // ── Email delivery status ─────────────────────────────────────────────────
     val emailStatus: String = "NOT_REQUESTED", // NOT_REQUESTED | PENDING | SENDING | SENT | FAILED
     val emailSentAt: Long? = null,
-    val emailRecipient: String = ""
+    val emailRecipient: String = "",
+
+    // ── Emergency alert deduplication ────────────────────────────────────────
+    // Set to true after the first emergency alert attempt for this report.
+    // Prevents duplicate SMS on recomposition, screen recreation, or app restart.
+    val emergencyAlertSent: Boolean = false
 )
 
 @Entity(tableName = "anomaly_events")
