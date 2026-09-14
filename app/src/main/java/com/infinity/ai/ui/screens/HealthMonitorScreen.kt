@@ -80,6 +80,7 @@ fun HealthMonitorScreen(
 
     var liveReading by remember { mutableStateOf<com.infinity.ai.health.data.VitalsReading?>(null) }
     val emgBuffer = remember { mutableStateListOf<Float>() }
+    val cardiacBuffer = remember { mutableStateListOf<Float>() }
 
     // Restart collector when source or connection state changes
     LaunchedEffect(simRunning, btState) {
@@ -90,6 +91,10 @@ fun HealthMonitorScreen(
                 emgBuffer.add(v)
                 if (emgBuffer.size > 120) emgBuffer.removeAt(0)
             }
+            val pVal = reading.pulseRaw?.toFloat()
+                ?: (520f + ((reading.bpm ?: 72) - 72) * 4.5f)
+            cardiacBuffer.add(pVal)
+            if (cardiacBuffer.size > 120) cardiacBuffer.removeAt(0)
         }
     }
 
@@ -98,6 +103,7 @@ fun HealthMonitorScreen(
         if (!simRunning && btState is BtState.Disconnected) {
             liveReading = null
             emgBuffer.clear()
+            cardiacBuffer.clear()
         }
     }
 
@@ -366,7 +372,13 @@ fun HealthMonitorScreen(
 
             Spacer(Modifier.height(20.dp))
 
-            EmgOscilloscope(buffer = emgBuffer, color = emgColor, dark = dark)
+            DualHealthOscilloscope(
+                emgBuffer     = emgBuffer,
+                cardiacBuffer = cardiacBuffer,
+                emgColor      = emgColor,
+                liveBpm       = liveReading?.bpm,
+                dark          = dark
+            )
 
             Spacer(Modifier.height(20.dp))
 
@@ -487,14 +499,27 @@ private fun SessionControls(
     }
 }
 
-// ── EMG Oscilloscope ──────────────────────────────────────────────────────────
+// ── Dual Health Oscilloscope (EMG + Cardiac Pulse Wave) ────────────────────
+
+enum class OscilloscopeTab(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
+    EMG("EMG Wave", Icons.Default.ElectricBolt),
+    CARDIAC("Heart Pulse", Icons.Default.Favorite),
+    DUAL("Dual Mode", Icons.Default.Tune)
+}
 
 @Composable
-private fun EmgOscilloscope(buffer: List<Float>, color: Color, dark: Boolean) {
-    val gridColor    = if (dark) Color.White.copy(0.06f) else Color.Black.copy(0.06f)
-    val labelColor   = if (dark) TextSecondary else TextSecondaryLight
+private fun DualHealthOscilloscope(
+    emgBuffer    : List<Float>,
+    cardiacBuffer: List<Float>,
+    emgColor     : Color,
+    liveBpm      : Int?,
+    dark         : Boolean
+) {
+    var selectedTab by remember { mutableStateOf(OscilloscopeTab.EMG) }
     val surfaceColor = if (dark) DarkSurface else LightSurface
     val borderColor  = if (dark) DarkBorder  else LightBorder
+    val labelColor   = if (dark) TextSecondary else TextSecondaryLight
+    val cardiacColor = Color(0xFFFF3366) // Vibrant neon cardiac crimson
 
     Column(
         modifier = Modifier
@@ -502,83 +527,257 @@ private fun EmgOscilloscope(buffer: List<Float>, color: Color, dark: Boolean) {
             .clip(RoundedCornerShape(16.dp))
             .background(surfaceColor)
             .border(1.dp, borderColor, RoundedCornerShape(16.dp))
-            .padding(12.dp)
+            .padding(14.dp)
     ) {
+        // Tab selector pills
         Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                val pulse = rememberInfiniteTransition(label = "osc")
-                val alpha by pulse.animateFloat(
-                    initialValue = 0.3f, targetValue = 1f,
-                    animationSpec = infiniteRepeatable(tween(500), RepeatMode.Reverse),
-                    label = "b"
-                )
-                Box(Modifier.size(7.dp).background(color.copy(alpha), CircleShape))
-                Text("EMG Oscilloscope",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = labelColor,
-                    fontWeight = FontWeight.SemiBold)
+            OscilloscopeTab.values().forEach { tab ->
+                val isSelected = selectedTab == tab
+                val tabColor = when (tab) {
+                    OscilloscopeTab.EMG     -> emgColor
+                    OscilloscopeTab.CARDIAC -> cardiacColor
+                    OscilloscopeTab.DUAL    -> Blue500
+                }
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (isSelected) tabColor.copy(0.16f) else (if (dark) DarkSurfaceElevated else LightSurfaceElevated))
+                        .border(1.dp, if (isSelected) tabColor.copy(0.6f) else Color.Transparent, RoundedCornerShape(10.dp))
+                        .clickable { selectedTab = tab }
+                        .padding(vertical = 7.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            tab.icon,
+                            contentDescription = null,
+                            tint = if (isSelected) tabColor else labelColor,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Text(
+                            tab.label,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isSelected) (if (dark) TextPrimary else TextPrimaryLight) else labelColor,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
             }
-            Text("0 – 1023 ADC",
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        when (selectedTab) {
+            OscilloscopeTab.EMG -> {
+                EmgWaveformCanvas(buffer = emgBuffer, color = emgColor, dark = dark, height = 150.dp)
+            }
+            OscilloscopeTab.CARDIAC -> {
+                CardiacWaveformCanvas(buffer = cardiacBuffer, color = cardiacColor, liveBpm = liveBpm, dark = dark, height = 150.dp)
+            }
+            OscilloscopeTab.DUAL -> {
+                EmgWaveformCanvas(buffer = emgBuffer, color = emgColor, dark = dark, height = 110.dp)
+                Spacer(Modifier.height(12.dp))
+                CardiacWaveformCanvas(buffer = cardiacBuffer, color = cardiacColor, liveBpm = liveBpm, dark = dark, height = 110.dp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmgWaveformCanvas(
+    buffer: List<Float>,
+    color: Color,
+    dark: Boolean,
+    height: Dp = 150.dp
+) {
+    val gridColor  = if (dark) Color.White.copy(0.06f) else Color.Black.copy(0.06f)
+    val labelColor = if (dark) TextSecondary else TextSecondaryLight
+
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            val pulse = rememberInfiniteTransition(label = "emg_osc")
+            val alpha by pulse.animateFloat(
+                initialValue = 0.3f, targetValue = 1f,
+                animationSpec = infiniteRepeatable(tween(500), RepeatMode.Reverse),
+                label = "ea"
+            )
+            Box(Modifier.size(7.dp).background(color.copy(alpha), CircleShape))
+            Text("EMG Muscle Wave",
                 style = MaterialTheme.typography.labelSmall,
-                color = labelColor)
+                color = labelColor,
+                fontWeight = FontWeight.SemiBold)
+        }
+        Text("0 – 1023 ADC",
+            style = MaterialTheme.typography.labelSmall,
+            color = labelColor)
+    }
+
+    Spacer(Modifier.height(8.dp))
+
+    androidx.compose.foundation.Canvas(
+        modifier = Modifier.fillMaxWidth().height(height)
+    ) {
+        val w = size.width
+        val h = size.height
+        for (i in 0..4) {
+            val y = h * i / 4f
+            drawLine(gridColor, Offset(0f, y), Offset(w, y), strokeWidth = 1f)
+        }
+        val warnY   = h - h * (AnomalyThresholds.EMG_HIGH_WARNING.toFloat()    / 1023f)
+        val critY   = h - h * (AnomalyThresholds.EMG_HIGH_CRITICAL.toFloat()   / 1023f)
+        val activeY = h - h * (AnomalyThresholds.EMG_ACTIVE_THRESHOLD.toFloat()/ 1023f)
+        drawLine(SuccessGreen.copy(0.25f), Offset(0f, activeY), Offset(w, activeY), strokeWidth = 1f,
+            pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f)))
+        drawLine(WarnAmber.copy(0.35f),    Offset(0f, warnY),   Offset(w, warnY),   strokeWidth = 1f,
+            pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f)))
+        drawLine(ErrorRed.copy(0.35f),     Offset(0f, critY),   Offset(w, critY),   strokeWidth = 1f,
+            pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f)))
+        if (buffer.size < 2) return@Canvas
+        val step = w / (buffer.size - 1).toFloat()
+        val path = Path()
+        buffer.forEachIndexed { i, v ->
+            val x = i * step
+            val y = h - h * (v / 1023f).coerceIn(0f, 1f)
+            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
+        val fillPath = Path().apply {
+            addPath(path)
+            lineTo((buffer.size - 1) * step, h)
+            lineTo(0f, h)
+            close()
+        }
+        drawPath(fillPath, brush = Brush.verticalGradient(
+            colors = listOf(color.copy(0.18f), color.copy(0f)), startY = 0f, endY = h))
+        drawPath(path, color = color, style = Stroke(width = 2f, cap = StrokeCap.Round))
+        val lastX = (buffer.size - 1) * step
+        val lastY = h - h * (buffer.last() / 1023f).coerceIn(0f, 1f)
+        drawCircle(color, radius = 5f, center = Offset(lastX, lastY))
+        drawCircle(color.copy(0.25f), radius = 10f, center = Offset(lastX, lastY))
+    }
+
+    Spacer(Modifier.height(4.dp))
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text("0",    style = MaterialTheme.typography.labelSmall, color = labelColor, fontSize = 9.sp)
+        Text("256",  style = MaterialTheme.typography.labelSmall, color = labelColor, fontSize = 9.sp)
+        Text("512",  style = MaterialTheme.typography.labelSmall, color = labelColor, fontSize = 9.sp)
+        Text("768",  style = MaterialTheme.typography.labelSmall, color = labelColor, fontSize = 9.sp)
+        Text("1023", style = MaterialTheme.typography.labelSmall, color = labelColor, fontSize = 9.sp)
+    }
+}
+
+@Composable
+private fun CardiacWaveformCanvas(
+    buffer : List<Float>,
+    color  : Color,
+    liveBpm: Int?,
+    dark   : Boolean,
+    height : Dp = 150.dp
+) {
+    val gridColor  = if (dark) Color.White.copy(0.06f) else Color.Black.copy(0.06f)
+    val labelColor = if (dark) TextSecondary else TextSecondaryLight
+
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            val pulse = rememberInfiniteTransition(label = "pulse_osc")
+            val alpha by pulse.animateFloat(
+                initialValue = 0.35f, targetValue = 1f,
+                animationSpec = infiniteRepeatable(tween(450), RepeatMode.Reverse),
+                label = "pa"
+            )
+            Box(Modifier.size(7.dp).background(color.copy(alpha), CircleShape))
+            Text("Cardiac Pulse Wave (PPG)",
+                style = MaterialTheme.typography.labelSmall,
+                color = labelColor,
+                fontWeight = FontWeight.SemiBold)
+        }
+        Text(
+            text = if (liveBpm != null) "$liveBpm BPM" else "Syncing...",
+            style = MaterialTheme.typography.labelSmall,
+            color = color,
+            fontWeight = FontWeight.Bold
+        )
+    }
+
+    Spacer(Modifier.height(8.dp))
+
+    androidx.compose.foundation.Canvas(
+        modifier = Modifier.fillMaxWidth().height(height)
+    ) {
+        val w = size.width
+        val h = size.height
+
+        for (i in 0..4) {
+            val y = h * i / 4f
+            drawLine(gridColor, Offset(0f, y), Offset(w, y), strokeWidth = 1f)
         }
 
-        Spacer(Modifier.height(10.dp))
+        val centerY = h * 0.5f
+        drawLine(
+            color.copy(0.2f),
+            Offset(0f, centerY),
+            Offset(w, centerY),
+            strokeWidth = 1f,
+            pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f))
+        )
 
-        androidx.compose.foundation.Canvas(
-            modifier = Modifier.fillMaxWidth().height(160.dp)
-        ) {
-            val w = size.width
-            val h = size.height
-            for (i in 0..4) {
-                val y = h * i / 4f
-                drawLine(gridColor, Offset(0f, y), Offset(w, y), strokeWidth = 1f)
-            }
-            val warnY   = h - h * (AnomalyThresholds.EMG_HIGH_WARNING.toFloat()    / 1023f)
-            val critY   = h - h * (AnomalyThresholds.EMG_HIGH_CRITICAL.toFloat()   / 1023f)
-            val activeY = h - h * (AnomalyThresholds.EMG_ACTIVE_THRESHOLD.toFloat()/ 1023f)
-            drawLine(SuccessGreen.copy(0.25f), Offset(0f, activeY), Offset(w, activeY), strokeWidth = 1f,
-                pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f)))
-            drawLine(WarnAmber.copy(0.35f),    Offset(0f, warnY),   Offset(w, warnY),   strokeWidth = 1f,
-                pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f)))
-            drawLine(ErrorRed.copy(0.35f),     Offset(0f, critY),   Offset(w, critY),   strokeWidth = 1f,
-                pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f)))
-            if (buffer.size < 2) return@Canvas
-            val step = w / (buffer.size - 1).toFloat()
-            val path = Path()
-            buffer.forEachIndexed { i, v ->
-                val x = i * step
-                val y = h - h * (v / 1023f).coerceIn(0f, 1f)
-                if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
-            }
-            val fillPath = Path().apply {
-                addPath(path)
-                lineTo((buffer.size - 1) * step, h)
-                lineTo(0f, h)
-                close()
-            }
-            drawPath(fillPath, brush = Brush.verticalGradient(
-                colors = listOf(color.copy(0.18f), color.copy(0f)), startY = 0f, endY = h))
-            drawPath(path, color = color, style = Stroke(width = 2f, cap = StrokeCap.Round))
-            val lastX = (buffer.size - 1) * step
-            val lastY = h - h * (buffer.last() / 1023f).coerceIn(0f, 1f)
-            drawCircle(color, radius = 5f, center = Offset(lastX, lastY))
-            drawCircle(color.copy(0.25f), radius = 10f, center = Offset(lastX, lastY))
+        if (buffer.size < 2) return@Canvas
+
+        val minVal = 350f
+        val maxVal = 700f
+        val range  = (maxVal - minVal).coerceAtLeast(1f)
+        val step   = w / (buffer.size - 1).toFloat()
+
+        val path = Path()
+        buffer.forEachIndexed { i, v ->
+            val x = i * step
+            val y = h - h * ((v - minVal) / range).coerceIn(0f, 1f)
+            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
         }
 
-        Spacer(Modifier.height(6.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("0",    style = MaterialTheme.typography.labelSmall, color = labelColor)
-            Text("256",  style = MaterialTheme.typography.labelSmall, color = labelColor)
-            Text("512",  style = MaterialTheme.typography.labelSmall, color = labelColor)
-            Text("768",  style = MaterialTheme.typography.labelSmall, color = labelColor)
-            Text("1023", style = MaterialTheme.typography.labelSmall, color = labelColor)
+        val fillPath = Path().apply {
+            addPath(path)
+            lineTo((buffer.size - 1) * step, h)
+            lineTo(0f, h)
+            close()
         }
+        drawPath(
+            fillPath,
+            brush = Brush.verticalGradient(
+                colors = listOf(color.copy(0.22f), color.copy(0f)),
+                startY = 0f,
+                endY = h
+            )
+        )
+        drawPath(path, color = color, style = Stroke(width = 2.2f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+
+        val lastX = (buffer.size - 1) * step
+        val lastY = h - h * ((buffer.last() - minVal) / range).coerceIn(0f, 1f)
+        drawCircle(color, radius = 5f, center = Offset(lastX, lastY))
+        drawCircle(color.copy(0.28f), radius = 11f, center = Offset(lastX, lastY))
+    }
+
+    Spacer(Modifier.height(4.dp))
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text("Diastole", style = MaterialTheme.typography.labelSmall, color = labelColor, fontSize = 9.sp)
+        Text("Arterial PPG", style = MaterialTheme.typography.labelSmall, color = labelColor, fontSize = 9.sp)
+        Text("Systole", style = MaterialTheme.typography.labelSmall, color = labelColor, fontSize = 9.sp)
     }
 }
 
