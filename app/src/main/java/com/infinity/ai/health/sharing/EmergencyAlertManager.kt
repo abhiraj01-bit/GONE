@@ -110,9 +110,9 @@ object EmergencyAlertManager {
             AlertResult.Disabled
         }
 
-        // 8. Call alert (ACTION_DIAL — opens dialer, does not auto-call)
+        // 8. Call alert — ACTION_CALL if permission granted, ACTION_DIAL fallback
         if (pref.callEnabled.first()) {
-            openDialer(context, number)
+            placeCall(context, number)
         }
 
         return smsResult
@@ -222,17 +222,21 @@ object EmergencyAlertManager {
     }
 
     /**
-     * Opens the phone dialer with the number pre-filled.
-     * Uses ACTION_DIAL (never ACTION_CALL) — user must confirm the call.
+     * Places a direct call if CALL_PHONE is granted; falls back to ACTION_DIAL otherwise.
+     * Failure never affects SMS or report generation.
      */
-    private fun openDialer(context: Context, number: String) {
+    private fun placeCall(context: Context, number: String) {
         try {
-            val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:${Uri.encode(number)}"))
+            val hasPermission = ContextCompat.checkSelfPermission(
+                context, Manifest.permission.CALL_PHONE
+            ) == PackageManager.PERMISSION_GRANTED
+            val action = if (hasPermission) Intent.ACTION_CALL else Intent.ACTION_DIAL
+            val intent = Intent(action, Uri.parse("tel:${Uri.encode(number)}"))
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(intent)
-            Log.i(TAG, "Dialer opened for $number")
+            Log.i(TAG, if (hasPermission) "Call placed to $number" else "Dialer opened (CALL_PHONE not granted) for $number")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to open dialer: ${e.message}", e)
+            Log.e(TAG, "Failed to place call: ${e.message}", e)
         }
     }
 }

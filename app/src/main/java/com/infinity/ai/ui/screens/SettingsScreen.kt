@@ -206,6 +206,16 @@ private fun EmergencyAlertsSection(isDarkTheme: Boolean) {
         ActivityResultContracts.RequestPermission()
     ) { granted -> smsGranted = granted }
 
+    var callPhoneGranted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) ==
+                    PackageManager.PERMISSION_GRANTED
+        )
+    }
+    val callPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> callPhoneGranted = granted }
+
     val numberError = when {
         alertsEnabled && numberDraft.isBlank()       -> "Enter an emergency contact number."
         alertsEnabled && !pref.isValidNumber(numberDraft) -> "Enter a valid phone number (7–15 digits)."
@@ -395,6 +405,38 @@ private fun EmergencyAlertsSection(isDarkTheme: Boolean) {
                     isDark   = isDarkTheme,
                     onToggle = { scope.launch { pref.setCallEnabled(it) } }
                 )
+
+                // CALL_PHONE permission nudge
+                if (callEnabled && !callPhoneGranted) {
+                    Spacer(Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(WarnAmber.copy(0.1f))
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Warning, null,
+                            tint = WarnAmber, modifier = Modifier.size(14.dp))
+                        Text(
+                            "Phone call permission required.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = WarnAmber,
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextButton(
+                            onClick = { callPermLauncher.launch(Manifest.permission.CALL_PHONE) },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                        ) {
+                            Text("Grant",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = WarnAmber,
+                                fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
 
                 SettingsDivider(isDarkTheme)
 
