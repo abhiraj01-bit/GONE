@@ -11,6 +11,7 @@ import com.infinity.ai.health.data.HealthReportEntity
 import com.infinity.ai.health.data.VitalsReading
 import com.infinity.ai.health.mock.SimulatorScenario
 import com.infinity.ai.health.repository.HealthRepository
+import com.infinity.ai.health.sharing.ReportSharingService
 import com.infinity.ai.ui.components.OrbState
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -171,6 +172,12 @@ class HealthViewModel(app: Application) : AndroidViewModel(app) {
                 onSuccess = { reportId ->
                     Log.d("INFINITY_REPORT", "ViewModel: report success, reportId=$reportId")
                     _reportState.value = ReportState.Success(reportId)
+                    // ── Additive: attempt email sharing AFTER report is saved ──
+                    // Never blocks UI, never affects report generation result.
+                    launch {
+                        try { ReportSharingService.maybeShareReport(getApplication(), reportId) }
+                        catch (e: Exception) { Log.w("ReportSharing", "Sharing error (non-fatal): ${e.message}") }
+                    }
                 },
                 onFailure = { e ->
                     Log.e("INFINITY_REPORT", "ViewModel: report failed: ${e.message}", e)

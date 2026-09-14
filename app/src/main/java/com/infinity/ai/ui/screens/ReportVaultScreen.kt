@@ -230,6 +230,35 @@ private fun VaultReportCard(
                     tint = Blue500, modifier = Modifier.size(14.dp))
             }
         }
+
+        // ── Email delivery status indicator (additive) ────────────────────────
+        EmailStatusChip(report.emailStatus, dark)
+    }
+}
+
+@Composable
+private fun EmailStatusChip(emailStatus: String, dark: Boolean) {
+    if (emailStatus == "NOT_REQUESTED") return
+    val (icon, label, color) = when (emailStatus) {
+        "SENT"    -> Triple(Icons.Default.MarkEmailRead, "Email sent",    SuccessGreen)
+        "PENDING" -> Triple(Icons.Default.Schedule,      "Email pending", WarnAmber)
+        "SENDING" -> Triple(Icons.Default.Send,          "Sending...",    Blue500)
+        "FAILED"  -> Triple(Icons.Default.ErrorOutline,  "Email failed",  ErrorRed)
+        else      -> return
+    }
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(color.copy(0.08f))
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Icon(icon, null, tint = color, modifier = Modifier.size(11.dp))
+        Text(label,
+            style = MaterialTheme.typography.labelSmall,
+            color = color,
+            fontSize = 10.sp)
     }
 }
 

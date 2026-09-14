@@ -125,6 +125,19 @@ interface HealthReportDao {
         overallStatus               : String,
         rawAiJson                   : String
     )
+    @Query("""
+        UPDATE health_reports SET
+            emailStatus    = :emailStatus,
+            emailSentAt    = :emailSentAt,
+            emailRecipient = :emailRecipient
+        WHERE id = :id
+    """)
+    suspend fun updateEmailStatus(
+        id            : Long,
+        emailStatus   : String,
+        emailSentAt   : Long?,
+        emailRecipient: String
+    )
 }
 
 @Dao

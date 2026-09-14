@@ -132,7 +132,12 @@ data class HealthReportEntity(
     val overallStatus: String = "Unknown",   // "Normal" | "Needs Attention" | "Concerning"
 
     // Raw Qwen JSON response (kept for debugging; never displayed directly)
-    val rawAiJson: String = ""
+    val rawAiJson: String = "",
+
+    // ── Email delivery status ─────────────────────────────────────────────────
+    val emailStatus: String = "NOT_REQUESTED", // NOT_REQUESTED | PENDING | SENDING | SENT | FAILED
+    val emailSentAt: Long? = null,
+    val emailRecipient: String = ""
 )
 
 @Entity(tableName = "anomaly_events")

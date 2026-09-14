@@ -6,6 +6,7 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -17,23 +18,28 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.infinity.ai.ai.state.AIInferenceState
+import com.infinity.ai.data.ReportSharingPreference
 import com.infinity.ai.health.mock.SimulatorScenario
 import com.infinity.ai.ui.components.GradientBackground
 import com.infinity.ai.ui.components.GlassCard
 import com.infinity.ai.ui.theme.*
 import com.infinity.ai.viewmodel.ChatViewModel
 import com.infinity.ai.viewmodel.HealthViewModel
+import com.infinity.ai.viewmodel.ReportSharingViewModel
 
 @Composable
 fun SettingsScreen(isDarkTheme: Boolean, bottomPadding: Dp, onToggleTheme: () -> Unit) {
     val chatViewModel: ChatViewModel = viewModel()
     val healthViewModel: HealthViewModel = viewModel()
+    val sharingViewModel: ReportSharingViewModel = viewModel()
     val aiState by chatViewModel.aiState.collectAsState()
     val simRunning by healthViewModel.simulatorRunning.collectAsState()
     val scroll = rememberScrollState()
@@ -134,6 +140,10 @@ fun SettingsScreen(isDarkTheme: Boolean, bottomPadding: Dp, onToggleTheme: () ->
 
             Spacer(Modifier.height(12.dp))
 
+            ReportSharingSection(isDarkTheme = isDarkTheme, vm = sharingViewModel)
+
+            Spacer(Modifier.height(12.dp))
+
             SettingsSection("About", isDarkTheme) {
                 SettingsRow(Icons.Default.Info, "Version", "1.0.0",
                     if (isDarkTheme) TextSecondary else TextSecondaryLight, isDarkTheme)
@@ -157,6 +167,144 @@ fun SettingsScreen(isDarkTheme: Boolean, bottomPadding: Dp, onToggleTheme: () ->
             }
 
             Spacer(Modifier.height(bottomPadding + 16.dp))
+        }
+    }
+}
+
+// ── Report Sharing Section ───────────────────────────────────────────────────
+
+@Composable
+private fun ReportSharingSection(isDarkTheme: Boolean, vm: ReportSharingViewModel) {
+    val enabled by vm.sharingEnabled.collectAsState()
+    val email   by vm.sharingEmail.collectAsState()
+    var emailDraft by remember(email) { mutableStateOf(email) }
+    val pref = ReportSharingPreference(LocalContext.current)
+
+    val emailError = when {
+        enabled && emailDraft.isBlank()              -> "Enter an email address to enable automatic report sharing."
+        enabled && !pref.isValidEmail(emailDraft)    -> "Enter a valid email address."
+        else                                         -> null
+    }
+
+    Column(modifier = Modifier.padding(horizontal = 20.dp)) {
+        Text(
+            "HEALTH REPORTS",
+            style = MaterialTheme.typography.labelSmall,
+            color = if (isDarkTheme) TextSecondary else TextSecondaryLight,
+            fontWeight = FontWeight.Medium,
+            letterSpacing = 1.sp,
+            modifier = Modifier.padding(bottom = 8.dp, start = 4.dp)
+        )
+        GlassCard(darkTheme = isDarkTheme, modifier = Modifier.fillMaxWidth()) {
+            // Toggle row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(
+                            if (enabled) SuccessGreen.copy(0.15f) else Blue500.copy(0.12f),
+                            RoundedCornerShape(10.dp)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.CloudUpload, null,
+                        tint = if (enabled) SuccessGreen else Blue500,
+                        modifier = Modifier.size(18.dp))
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Share Reports to Cloud",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = if (isDarkTheme) TextPrimary else TextPrimaryLight,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        "Automatically send completed health reports to your email.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (isDarkTheme) TextSecondary else TextSecondaryLight
+                    )
+                }
+                Switch(
+                    checked = enabled,
+                    onCheckedChange = { vm.setEnabled(it) },
+                    colors = SwitchDefaults.colors(
+                        checkedTrackColor = SuccessGreen,
+                        checkedThumbColor = Color.White
+                    )
+                )
+            }
+
+            // Email field — shown when toggle is ON
+            if (enabled) {
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 10.dp),
+                    color = if (isDarkTheme) Color.White.copy(0.05f) else Color.Black.copy(0.05f)
+                )
+                Text(
+                    "EMAIL ADDRESS",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isDarkTheme) TextSecondary else TextSecondaryLight,
+                    letterSpacing = 1.sp
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = emailDraft,
+                    onValueChange = { emailDraft = it },
+                    placeholder = {
+                        Text("user@example.com",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (isDarkTheme) TextDisabled else TextSecondaryLight.copy(0.5f))
+                    },
+                    singleLine = true,
+                    isError = emailError != null,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Email,
+                        imeAction    = ImeAction.Done
+                    ),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor   = Blue500,
+                        unfocusedBorderColor = if (isDarkTheme) Color.White.copy(0.12f) else Color.Black.copy(0.12f),
+                        errorBorderColor     = ErrorRed,
+                        focusedTextColor     = if (isDarkTheme) TextPrimary else TextPrimaryLight,
+                        unfocusedTextColor   = if (isDarkTheme) TextPrimary else TextPrimaryLight,
+                        cursorColor          = Blue500
+                    ),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    trailingIcon = {
+                        if (emailDraft.isNotBlank() && pref.isValidEmail(emailDraft)) {
+                            IconButton(onClick = { vm.setEmail(emailDraft) }) {
+                                Icon(Icons.Default.Check, "Save", tint = SuccessGreen,
+                                    modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    }
+                )
+                if (emailError != null) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(emailError,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = ErrorRed)
+                } else if (email.isNotBlank() && pref.isValidEmail(email)) {
+                    Spacer(Modifier.height(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Icon(Icons.Default.CheckCircle, null,
+                            tint = SuccessGreen, modifier = Modifier.size(12.dp))
+                        Text("Reports will be sent to $email",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = SuccessGreen)
+                    }
+                }
+                // Save on focus-lost / when user taps away
+                LaunchedEffect(emailDraft) {
+                    if (pref.isValidEmail(emailDraft)) vm.setEmail(emailDraft)
+                }
+            }
         }
     }
 }
