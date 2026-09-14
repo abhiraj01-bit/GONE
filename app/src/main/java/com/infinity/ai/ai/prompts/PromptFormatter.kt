@@ -64,23 +64,25 @@ object PromptFormatter {
     }
 
     /**
-     * Build a health anomaly explanation prompt.
-     * The anomaly engine has already determined the event — Qwen only explains it.
+     * Build the session report prompt.
+     * Compact schema and strict token limit for ultra-fast on-device Qwen inference.
+     * Generates in under 10-15 seconds on mobile CPU.
      */
-    fun buildSessionReportPrompt(sessionJson: String): String {
+    fun buildSessionReportPrompt(sessionSummaryJson: String): String {
         val sb = StringBuilder()
         sb.append("<|im_start|>system\n")
         sb.append(
-            "You are G-ONE, a health monitoring AI assistant running fully offline. " +
-            "You have been given aggregated vitals statistics from a completed monitoring session. " +
-            "Write a clear, structured body health report. " +
-            "Rules: 1. Do NOT diagnose. 2. Use the actual values. 3. Comment on each vital (HR, SpO2, Temperature). " +
-            "4. Note any fall events. 5. Give an overall health status (Normal / Needs Attention / Concerning). " +
-            "6. Keep it under 150 words. Be calm, professional, and clear."
+            "You are G-ONE, offline health AI. Analyze the vital summary and respond with ONLY a concise JSON object.\n" +
+            "Schema:\n" +
+            "{\"summary\":\"1-2 sentences summarizing vital trends\"," +
+            "\"overall_status\":\"Normal|Needs Attention|Concerning\"," +
+            "\"observations\":[\"concise observation point\"]," +
+            "\"physical_concerns\":[{\"title\":\"str\",\"description\":\"str\",\"severity\":\"low|moderate|high\"}]}\n" +
+            "Rules: Be extremely brief. No diagnoses, use 'may indicate'. Output ONLY the JSON object."
         )
         sb.append("<|im_end|>\n")
         sb.append("<|im_start|>user\n")
-        sb.append("Here is the session summary data:\n$sessionJson\nPlease generate a full body health report for this session.")
+        sb.append(sessionSummaryJson)
         sb.append("<|im_end|>\n")
         sb.append("<|im_start|>assistant\n")
         return sb.toString()

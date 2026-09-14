@@ -20,6 +20,12 @@ object AnomalyThresholds {
     const val TEMP_HIGH_WARNING  = 37.8f
     const val TEMP_HIGH_CRITICAL = 39.0f
 
+    // EMG (raw ADC 0–1023)
+    // Tune these after calibrating your sensor on the target muscle
+    const val EMG_ACTIVE_THRESHOLD  = 400   // above = muscle contraction detected
+    const val EMG_HIGH_WARNING      = 700   // sustained high = possible fatigue/spasm
+    const val EMG_HIGH_CRITICAL     = 900   // very high = strong spasm / alert
+
     // Sustained-reading window before confirming anomaly
     const val SUSTAINED_WINDOW = 3   // consecutive readings
 }

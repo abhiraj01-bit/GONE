@@ -145,9 +145,15 @@ class AIRepository(context: Context) {
     }
 
     suspend fun generateSessionReport(sessionJson: String): String {
+        // Stop any in-progress generation (anomaly explanations run concurrently and
+        // block the single llama.cpp thread — flush them before the report call).
+        engine.stop()
         val prompt = com.infinity.ai.ai.prompts.PromptFormatter.buildSessionReportPrompt(sessionJson)
         val sb = StringBuilder()
-        engine.generateRaw(prompt).collect { token -> sb.append(token) }
+        // Use the capped overload: 200 tokens is sufficient for compact JSON.
+        // This cuts generation time from ~3-5 min to ~60-90 seconds on-device.
+        engine.generateRaw(prompt, com.infinity.ai.ai.engine.LlamaEngine.REPORT_MAX_TOKENS)
+            .collect { token -> sb.append(token) }
         return sb.toString().trim()
     }
 }

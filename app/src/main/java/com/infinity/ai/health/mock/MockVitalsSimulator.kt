@@ -15,12 +15,13 @@ import kotlin.math.sin
 import kotlin.random.Random
 
 enum class SimulatorScenario(val label: String, val description: String) {
-    NORMAL      ("Normal",          "HR 65–80, SpO₂ 97–99, Temp 36.4–36.8°C"),
+    NORMAL      ("Normal",          "HR 65–80, SpO₂ 97–99, Temp 36.4–36.8°C, EMG resting"),
     HIGH_HR     ("High Heart Rate", "HR ramps to 130+ → triggers critical alert"),
     LOW_SPO2    ("Low SpO₂",        "SpO₂ drops to 88% → triggers critical alert"),
     FEVER       ("Fever",           "Temp rises to 39.5°C → triggers critical alert"),
     LOW_HR      ("Low Heart Rate",  "HR drops to 38 bpm → triggers critical alert"),
     FALL_EVENT  ("Fall Detected",   "Sends a fall event immediately"),
+    EMG_SPASM   ("EMG Spasm",       "EMG ramps to 950+ → triggers critical alert"),
     STRESS_TEST ("Stress Test",     "Rapid anomaly cycling — tests full pipeline"),
 }
 
@@ -90,72 +91,92 @@ class MockVitalsSimulator {
 
         return when (scenario) {
             SimulatorScenario.NORMAL -> VitalsReading(
+                bpm            = (72 + wave * 4 + jitter(3.0)).toInt().coerceIn(60, 85),
                 heartRate      = (72 + wave * 4 + jitter(3.0)).toInt().coerceIn(60, 85),
-                spo2           = (98 + jitter(1.0)).toInt().coerceIn(97, 100),
-                temperature    = (36.6f + wave * 0.1f + jitter(0.1).toFloat()).coerceIn(36.2f, 37.0f),
+                pulseRaw       = (512 + wave * 100 + jitter(50.0)).toInt().coerceIn(300, 700),
                 motionDetected = t % 8 < 3,
                 fallDetected   = false,
+                emgRaw         = (150 + wave * 50 + jitter(40.0)).toInt().coerceIn(50, 300),
                 rawPacket      = "MOCK:NORMAL"
             )
             SimulatorScenario.HIGH_HR -> {
-                val hr = (75 + (t * 3.5).coerceAtMost(65.0) + jitter(3.0)).toInt()
+                val hr = (75 + (t * 3.5).coerceAtMost(65.0) + jitter(3.0)).toInt().coerceIn(70, 145)
                 VitalsReading(
-                    heartRate      = hr.coerceIn(70, 145),
-                    spo2           = (97 + jitter(1.0)).toInt().coerceIn(95, 99),
-                    temperature    = (36.8f + jitter(0.1).toFloat()).coerceIn(36.5f, 37.2f),
+                    bpm            = hr,
+                    heartRate      = hr,
+                    pulseRaw       = (600 + jitter(50.0)).toInt().coerceIn(400, 800),
                     motionDetected = true,
                     fallDetected   = false,
+                    emgRaw         = (200 + jitter(50.0)).toInt().coerceIn(100, 350),
                     rawPacket      = "MOCK:HIGH_HR t=$t"
                 )
             }
             SimulatorScenario.LOW_SPO2 -> {
-                val spo2 = (98 - (t * 0.8).coerceAtMost(11.0) + jitter(1.0)).toInt()
+                val hr = (78 + jitter(4.0)).toInt().coerceIn(70, 90)
                 VitalsReading(
-                    heartRate      = (78 + jitter(4.0)).toInt().coerceIn(70, 90),
-                    spo2           = spo2.coerceIn(86, 99),
-                    temperature    = (36.7f + jitter(0.1).toFloat()),
+                    bpm            = hr,
+                    heartRate      = hr,
+                    pulseRaw       = (480 + jitter(40.0)).toInt().coerceIn(300, 650),
                     motionDetected = false,
                     fallDetected   = false,
+                    emgRaw         = (180 + jitter(40.0)).toInt().coerceIn(80, 280),
                     rawPacket      = "MOCK:LOW_SPO2 t=$t"
                 )
             }
             SimulatorScenario.FEVER -> {
-                val temp = (36.8f + t * 0.15f + jitter(0.05).toFloat()).coerceIn(36.5f, 40.0f)
+                val hr = (80 + t + jitter(3.0)).toInt().coerceIn(75, 115)
                 VitalsReading(
-                    heartRate      = (80 + t + jitter(3.0)).toInt().coerceIn(75, 115),
-                    spo2           = (97 + jitter(1.0)).toInt().coerceIn(95, 99),
-                    temperature    = temp,
+                    bpm            = hr,
+                    heartRate      = hr,
+                    pulseRaw       = (520 + jitter(40.0)).toInt().coerceIn(350, 700),
                     motionDetected = t % 5 < 2,
                     fallDetected   = false,
+                    emgRaw         = (160 + jitter(40.0)).toInt().coerceIn(80, 260),
                     rawPacket      = "MOCK:FEVER t=$t"
                 )
             }
             SimulatorScenario.LOW_HR -> {
-                val hr = (65 - (t * 2.0).coerceAtMost(30.0) + jitter(2.0)).toInt()
+                val hr = (65 - (t * 2.0).coerceAtMost(30.0) + jitter(2.0)).toInt().coerceIn(33, 68)
                 VitalsReading(
-                    heartRate      = hr.coerceIn(33, 68),
-                    spo2           = (96 + jitter(1.0)).toInt().coerceIn(94, 99),
-                    temperature    = (36.5f + jitter(0.1).toFloat()),
+                    bpm            = hr,
+                    heartRate      = hr,
+                    pulseRaw       = (400 + jitter(30.0)).toInt().coerceIn(250, 550),
                     motionDetected = false,
                     fallDetected   = false,
+                    emgRaw         = (120 + jitter(30.0)).toInt().coerceIn(50, 200),
                     rawPacket      = "MOCK:LOW_HR t=$t"
                 )
             }
             SimulatorScenario.FALL_EVENT -> VitalsReading(
+                bpm            = 95,
                 heartRate      = 95,
-                spo2           = 96,
-                temperature    = 36.7f,
+                pulseRaw       = 580,
                 motionDetected = true,
                 fallDetected   = true,
+                emgRaw         = 850,
                 rawPacket      = "MOCK:FALL"
             )
+            SimulatorScenario.EMG_SPASM -> {
+                val emg = (300 + (t * 50.0).coerceAtMost(700.0) + jitter(30.0)).toInt()
+                val hr  = (80 + jitter(5.0)).toInt().coerceIn(70, 95)
+                VitalsReading(
+                    bpm            = hr,
+                    heartRate      = hr,
+                    pulseRaw       = (500 + jitter(40.0)).toInt().coerceIn(350, 650),
+                    motionDetected = emg > 500,
+                    fallDetected   = false,
+                    emgRaw         = emg.coerceIn(200, 1023),
+                    rawPacket      = "MOCK:EMG_SPASM t=$t"
+                )
+            }
             SimulatorScenario.STRESS_TEST -> {
-                val phase = (t / 5) % 4
+                val phase = (t / 5) % 5
                 when (phase) {
-                    0    -> VitalsReading(heartRate = 140, spo2 = 97,  temperature = 36.8f, motionDetected = true,  fallDetected = false, rawPacket = "MOCK:STRESS_HR")
-                    1    -> VitalsReading(heartRate = 75,  spo2 = 88,  temperature = 36.8f, motionDetected = false, fallDetected = false, rawPacket = "MOCK:STRESS_SPO2")
-                    2    -> VitalsReading(heartRate = 75,  spo2 = 97,  temperature = 39.5f, motionDetected = false, fallDetected = false, rawPacket = "MOCK:STRESS_TEMP")
-                    else -> VitalsReading(heartRate = 75,  spo2 = 97,  temperature = 36.8f, motionDetected = true,  fallDetected = true,  rawPacket = "MOCK:STRESS_FALL")
+                    0    -> VitalsReading(bpm = 140, heartRate = 140, pulseRaw = 700, motionDetected = true,  fallDetected = false, emgRaw = 200,  rawPacket = "MOCK:STRESS_HR")
+                    1    -> VitalsReading(bpm = 75,  heartRate = 75,  pulseRaw = 490, motionDetected = false, fallDetected = false, emgRaw = 180,  rawPacket = "MOCK:STRESS_SPO2")
+                    2    -> VitalsReading(bpm = 75,  heartRate = 75,  pulseRaw = 490, motionDetected = false, fallDetected = false, emgRaw = 160,  rawPacket = "MOCK:STRESS_TEMP")
+                    3    -> VitalsReading(bpm = 75,  heartRate = 75,  pulseRaw = 490, motionDetected = true,  fallDetected = true,  emgRaw = 850,  rawPacket = "MOCK:STRESS_FALL")
+                    else -> VitalsReading(bpm = 78,  heartRate = 78,  pulseRaw = 500, motionDetected = true,  fallDetected = false, emgRaw = 950,  rawPacket = "MOCK:STRESS_EMG")
                 }
             }
         }

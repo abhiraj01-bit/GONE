@@ -209,9 +209,9 @@ private fun SimulatorSection(
                         color = if (isDarkTheme) TextPrimary else TextPrimaryLight,
                         fontWeight = FontWeight.Medium)
                     Text(
-                        if (isRunning) "Running · ${scenario.label}" else "Stopped · no hardware needed",
+                        if (isRunning) "⚠ MOCK DATA — Running · ${scenario.label}" else "Stopped · uses fake data, not real sensor",
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (isRunning) SuccessGreen
+                        color = if (isRunning) WarnAmber
                                 else if (isDarkTheme) TextSecondary else TextSecondaryLight
                     )
                 }

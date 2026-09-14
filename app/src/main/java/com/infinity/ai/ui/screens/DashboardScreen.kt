@@ -41,7 +41,8 @@ fun DashboardScreen(
     onNavigateToScreenshot : () -> Unit = onNavigateToChat,
     onNavigateToHealth     : () -> Unit = {},
     onNavigateToAlerts     : () -> Unit = {},
-    onNavigateToDevice     : () -> Unit = {}
+    onNavigateToDevice     : () -> Unit = {},
+    onNavigateToVault      : () -> Unit = {}
 ) {
     val dark = isDarkTheme
     val bg   = if (dark) DarkBg else LightBg
@@ -232,7 +233,7 @@ fun DashboardScreen(
             Spacer(Modifier.height(12.dp))
 
             // ══════════════════════════════════════════════════════════════════
-            // ROW 4 — PDF | Quiz | Screenshot (3 equal small cards)
+            // ROW 4 — PDF | Quiz | Screenshot | Report Vault
             // ══════════════════════════════════════════════════════════════════
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -257,6 +258,13 @@ fun DashboardScreen(
                     label   = "Screenshot",
                     dark    = dark,
                     onClick = onNavigateToScreenshot,
+                    modifier = Modifier.weight(1f).height(92.dp)
+                )
+                BentoMiniCard(
+                    icon    = Icons.Default.Assignment,
+                    label   = "Reports",
+                    dark    = dark,
+                    onClick = onNavigateToVault,
                     modifier = Modifier.weight(1f).height(92.dp)
                 )
             }

@@ -55,6 +55,12 @@ interface LocalAIEngine {
      */
     fun generateRaw(prompt: String): Flow<String>
 
+    /**
+     * Same as generateRaw but with an explicit token cap.
+     * Use this for structured/short responses (e.g. JSON reports) to avoid over-generating.
+     */
+    fun generateRaw(prompt: String, maxTokens: Int): Flow<String>
+
     /** Returns true if the model is loaded and ready to generate */
     fun isReady(): Boolean
 }

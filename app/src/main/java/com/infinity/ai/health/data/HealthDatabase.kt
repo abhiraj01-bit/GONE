@@ -6,14 +6,24 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 @Database(
-    entities = [VitalsReading::class, AnomalyEvent::class, DeviceEntity::class],
-    version = 1,
+    entities = [
+        VitalsReading::class,
+        HealthSession::class,
+        SessionReport::class,
+        AnomalyEvent::class,
+        DeviceEntity::class,
+        HealthReportEntity::class
+    ],
+    version = 5,
     exportSchema = false
 )
 abstract class HealthDatabase : RoomDatabase() {
     abstract fun vitalsDao(): VitalsDao
+    abstract fun sessionDao(): SessionDao
+    abstract fun sessionReportDao(): SessionReportDao
     abstract fun anomalyDao(): AnomalyDao
     abstract fun deviceDao(): DeviceDao
+    abstract fun healthReportDao(): HealthReportDao
 
     companion object {
         @Volatile private var INSTANCE: HealthDatabase? = null
@@ -24,7 +34,10 @@ abstract class HealthDatabase : RoomDatabase() {
                     context.applicationContext,
                     HealthDatabase::class.java,
                     "gone_health.db"
-                ).build().also { INSTANCE = it }
+                )
+                .fallbackToDestructiveMigration(true)
+                .build()
+                .also { INSTANCE = it }
             }
     }
 }

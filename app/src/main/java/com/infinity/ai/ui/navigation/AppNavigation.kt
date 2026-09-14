@@ -190,7 +190,8 @@ fun AppNavigation(isDarkTheme: Boolean, onToggleTheme: () -> Unit) {
                     onNavigateToScreenshot = { navController.navigate("screenshot") },
                     onNavigateToHealth     = { navController.navigate(Screen.Health.route) },
                     onNavigateToAlerts     = { navController.navigate("health_alerts") },
-                    onNavigateToDevice     = { navController.navigate("device") }
+                    onNavigateToDevice     = { navController.navigate("device") },
+                    onNavigateToVault      = { navController.navigate("report_vault") }
                 )
             }
             composable(Screen.Chat.route) {
@@ -205,7 +206,26 @@ fun AppNavigation(isDarkTheme: Boolean, onToggleTheme: () -> Unit) {
                 HealthMonitorScreen(
                     isDarkTheme        = isDarkTheme,
                     bottomPadding      = innerPadding.calculateBottomPadding(),
-                    onNavigateToDevice = { navController.navigate("device") }
+                    onNavigateToDevice = { navController.navigate("device") },
+                    onNavigateToReport = { reportId -> navController.navigate("report_view/$reportId") },
+                    onNavigateToVault  = { navController.navigate("report_vault") }
+                )
+            }
+            composable("report_view/{reportId}") { back ->
+                val reportId = back.arguments?.getString("reportId")?.toLongOrNull() ?: return@composable
+                ReportViewScreen(
+                    reportId       = reportId,
+                    isDarkTheme    = isDarkTheme,
+                    bottomPadding  = innerPadding.calculateBottomPadding(),
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+            composable("report_vault") {
+                ReportVaultScreen(
+                    isDarkTheme    = isDarkTheme,
+                    bottomPadding  = innerPadding.calculateBottomPadding(),
+                    onOpenReport   = { reportId -> navController.navigate("report_view/$reportId") },
+                    onNavigateBack = { navController.popBackStack() }
                 )
             }
             composable("health_alerts") {

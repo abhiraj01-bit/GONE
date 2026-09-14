@@ -19,10 +19,11 @@ import java.util.concurrent.atomic.AtomicReference
 class LlamaEngine : LocalAIEngine {
 
     companion object {
-        private const val TAG        = "LlamaEngine"
-        private const val N_CTX      = 2048
-        private const val N_THREADS  = 4
-        private const val MAX_TOKENS = 512
+        private const val TAG              = "LlamaEngine"
+        private const val N_CTX            = 2048
+        val optimalThreads: Int get() = (Runtime.getRuntime().availableProcessors() - 1).coerceIn(4, 6)
+        private const val MAX_TOKENS       = 512   // default chat response cap
+        const val REPORT_MAX_TOKENS        = 120   // compact JSON session report — 120 tokens max ensures fast completion
     }
 
     // AtomicReference is the CAS source of truth for thread-safe state transitions
@@ -46,8 +47,9 @@ class LlamaEngine : LocalAIEngine {
 
     override suspend fun loadModel(modelPath: String) {
         setState(AIInferenceState.Loading)
-        Log.i(TAG, "Loading model: $modelPath")
-        val ok = LlamaJniBridge.loadModel(modelPath, N_CTX, N_THREADS)
+        val threads = optimalThreads
+        Log.i(TAG, "Loading model: $modelPath with $threads threads")
+        val ok = LlamaJniBridge.loadModel(modelPath, N_CTX, threads)
         setState(if (ok) {
             Log.i(TAG, "Model loaded successfully")
             AIInferenceState.Idle
@@ -61,13 +63,16 @@ class LlamaEngine : LocalAIEngine {
         generateRaw(PromptFormatter.buildPrompt(history, userInput))
 
     override fun generateRaw(prompt: String): Flow<String> =
+        generateRaw(prompt, MAX_TOKENS)
+
+    override fun generateRaw(prompt: String, maxTokens: Int): Flow<String> =
         callbackFlow {
             setState(AIInferenceState.Thinking)
-            Log.d(TAG, "Prompt length: ${prompt.length} chars")
+            Log.d(TAG, "Prompt length: ${prompt.length} chars  maxTokens=$maxTokens")
 
             LlamaJniBridge.generate(
                 prompt    = prompt,
-                maxTokens = MAX_TOKENS,
+                maxTokens = maxTokens,
                 callback  = object : LlamaCallback {
                     override fun onToken(token: String) {
                         casState(AIInferenceState.Thinking, AIInferenceState.Responding())

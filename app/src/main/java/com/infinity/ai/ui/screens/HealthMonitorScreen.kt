@@ -15,17 +15,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.infinity.ai.bluetooth.BtState
-import com.infinity.ai.health.data.VitalsReading
+import com.infinity.ai.health.anomaly.AnomalyThresholds
+import com.infinity.ai.health.data.DerivedVitalsCalculator
 import com.infinity.ai.ui.components.GradientBackground
 import com.infinity.ai.ui.theme.*
 import com.infinity.ai.viewmodel.HealthViewModel
@@ -34,30 +32,77 @@ import java.util.*
 
 @Composable
 fun HealthMonitorScreen(
-    isDarkTheme   : Boolean,
-    bottomPadding : Dp,
-    onNavigateToDevice : () -> Unit = {}
+    isDarkTheme          : Boolean,
+    bottomPadding        : Dp,
+    onNavigateToDevice   : () -> Unit = {},
+    onNavigateToReport   : (Long) -> Unit = {},
+    onNavigateToVault    : () -> Unit = {}
 ) {
-    val vm: HealthViewModel = viewModel()
-    val btState       by vm.btState.collectAsState()
-    val vitals        by vm.latestVitals.collectAsState()
-    val recentVitals  by vm.recentVitals.collectAsState()
-    val alerts        by vm.unacknowledgedAlerts.collectAsState()
-    val aiExplanation by vm.latestAiExplanation.collectAsState()
-    val reportState   by vm.reportState.collectAsState()
-    val sessionReport by vm.sessionReport.collectAsState()
-    val dark = isDarkTheme
+    val vm              : HealthViewModel = viewModel()
+    val btState         by vm.btState.collectAsState()
+    val alerts          by vm.unacknowledgedAlerts.collectAsState()
+    val aiExplanation   by vm.latestAiExplanation.collectAsState()
+    val reportState     by vm.reportState.collectAsState()
+    val dark             = isDarkTheme
+    val simRunning       by vm.simulatorRunning.collectAsState()
+    val isSessionActive  by vm.isSessionActive.collectAsState()
+    val sessionReadingCount by vm.sessionReadingCount.collectAsState()
 
-    // Keep last 60 readings for graphs
-    val graphData = remember(recentVitals) { recentVitals.takeLast(60).reversed() }
+    // Navigate to report screen when generation succeeds
+    LaunchedEffect(reportState) {
+        if (reportState is HealthViewModel.ReportState.Success) {
+            onNavigateToReport((reportState as HealthViewModel.ReportState.Success).reportId)
+            vm.dismissReport()
+        }
+    }
 
-    if (reportState == HealthViewModel.ReportState.Done || reportState == HealthViewModel.ReportState.Error) {
-        SessionReportDialog(
-            report = sessionReport,
-            dark   = dark,
-            onDismiss = { vm.dismissReport() }
+    // Show error dialog
+    var showErrorDialog by remember { mutableStateOf(false) }
+    var errorMessage    by remember { mutableStateOf("") }
+    LaunchedEffect(reportState) {
+        if (reportState is HealthViewModel.ReportState.Error) {
+            errorMessage = (reportState as HealthViewModel.ReportState.Error).message
+            showErrorDialog = true
+        }
+    }
+    if (showErrorDialog) {
+        AlertDialog(
+            onDismissRequest = { showErrorDialog = false; vm.dismissReport() },
+            title = { Text("Report Error") },
+            text  = { Text(errorMessage) },
+            confirmButton = {
+                TextButton(onClick = { showErrorDialog = false; vm.dismissReport() }) {
+                    Text("OK")
+                }
+            }
         )
     }
+
+    var liveReading by remember { mutableStateOf<com.infinity.ai.health.data.VitalsReading?>(null) }
+    val emgBuffer = remember { mutableStateListOf<Float>() }
+
+    // Restart collector when source or connection state changes
+    LaunchedEffect(simRunning, btState) {
+        val source = if (simRunning) vm.simulatorLive else vm.liveEmg
+        source.collect { reading ->
+            liveReading = reading
+            reading.emgRaw?.toFloat()?.let { v ->
+                emgBuffer.add(v)
+                if (emgBuffer.size > 120) emgBuffer.removeAt(0)
+            }
+        }
+    }
+
+    // Clear only on genuine disconnect
+    LaunchedEffect(btState) {
+        if (!simRunning && btState is BtState.Disconnected) {
+            liveReading = null
+            emgBuffer.clear()
+        }
+    }
+
+    val isConnectedOrConnecting = btState is BtState.Connected ||
+        btState is BtState.Connecting || simRunning
 
     GradientBackground(darkTheme = dark, modifier = Modifier.fillMaxSize()) {
         Column(
@@ -69,7 +114,6 @@ fun HealthMonitorScreen(
         ) {
             Spacer(Modifier.height(24.dp))
 
-            // Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -80,7 +124,7 @@ fun HealthMonitorScreen(
                         style = MaterialTheme.typography.headlineMedium,
                         color = if (dark) TextPrimary else TextPrimaryLight,
                         fontWeight = FontWeight.Bold)
-                    Text("Live vitals from wearable",
+                    Text("Live EMG from wearable",
                         style = MaterialTheme.typography.bodySmall,
                         color = if (dark) TextSecondary else TextSecondaryLight)
                 }
@@ -89,132 +133,13 @@ fun HealthMonitorScreen(
 
             Spacer(Modifier.height(20.dp))
 
-            // Alert banner
             if (alerts.isNotEmpty()) {
                 AlertBanner(count = alerts.size, dark = dark)
                 Spacer(Modifier.height(12.dp))
             }
 
-            // Vitals grid
-            val hr   = vitals?.heartRate
-            val spo2 = vitals?.spo2
-            val temp = vitals?.temperature
-            val fall = vitals?.fallDetected ?: false
-            val mot  = vitals?.motionDetected ?: false
-
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                VitalCard(
-                    icon    = Icons.Default.Favorite,
-                    label   = "Heart Rate",
-                    value   = hr?.toString() ?: "--",
-                    unit    = "bpm",
-                    color   = if (hr != null && (hr < 50 || hr > 100)) ErrorRed else SuccessGreen,
-                    dark    = dark,
-                    modifier = Modifier.weight(1f)
-                )
-                VitalCard(
-                    icon    = Icons.Default.Air,
-                    label   = "SpO₂",
-                    value   = spo2?.toString() ?: "--",
-                    unit    = "%",
-                    color   = if (spo2 != null && spo2 < 94) ErrorRed else SuccessGreen,
-                    dark    = dark,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            Spacer(Modifier.height(12.dp))
-
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                VitalCard(
-                    icon    = Icons.Default.Thermostat,
-                    label   = "Temperature",
-                    value   = temp?.let { "%.1f".format(it) } ?: "--",
-                    unit    = "°C",
-                    color   = if (temp != null && (temp > 37.8f || temp < 35f)) WarnAmber else SuccessGreen,
-                    dark    = dark,
-                    modifier = Modifier.weight(1f)
-                )
-                VitalCard(
-                    icon    = if (fall) Icons.Default.Warning else Icons.Default.DirectionsWalk,
-                    label   = if (fall) "Fall Detected!" else "Motion",
-                    value   = if (fall) "FALL" else if (mot) "Active" else "Still",
-                    unit    = "",
-                    color   = if (fall) ErrorRed else if (mot) WarnAmber else SuccessGreen,
-                    dark    = dark,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            Spacer(Modifier.height(20.dp))
-
-            // ── Live Waveform Graphs ──────────────────────────────────────────
-            if (graphData.size >= 2) {
-                Text("Live Waveforms",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = if (dark) TextSecondary else TextSecondaryLight,
-                    fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(10.dp))
-
-                WaveformGraph(
-                    label  = "ECG — Heart Rate",
-                    unit   = "bpm",
-                    values = graphData.map { it.heartRate?.toFloat() },
-                    color  = ErrorRed,
-                    dark   = dark,
-                    yMin   = 30f,
-                    yMax   = 160f
-                )
-                Spacer(Modifier.height(10.dp))
-                WaveformGraph(
-                    label  = "SpO₂",
-                    unit   = "%",
-                    values = graphData.map { it.spo2?.toFloat() },
-                    color  = Blue500,
-                    dark   = dark,
-                    yMin   = 80f,
-                    yMax   = 100f
-                )
-                Spacer(Modifier.height(10.dp))
-                WaveformGraph(
-                    label  = "Temperature",
-                    unit   = "°C",
-                    values = graphData.map { it.temperature },
-                    color  = WarnAmber,
-                    dark   = dark,
-                    yMin   = 34f,
-                    yMax   = 41f
-                )
-                Spacer(Modifier.height(20.dp))
-            }
-
-            // ── AI Analysis Card ──────────────────────────────────────────────
-            AnimatedVisibility(
-                visible = aiExplanation.isNotBlank(),
-                enter   = fadeIn() + expandVertically(),
-                exit    = fadeOut() + shrinkVertically()
-            ) {
-                AiAnalysisCard(explanation = aiExplanation, dark = dark)
-                Spacer(Modifier.height(16.dp))
-            }
-
-            // ── Last reading timestamp ────────────────────────────────────────
-            vitals?.let { v ->
-                val fmt = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(Modifier.size(6.dp).background(SuccessGreen, CircleShape))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Last reading: ${fmt.format(Date(v.timestamp))}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (dark) TextSecondary else TextSecondaryLight)
-                }
-            }
-
-            if (vitals == null) {
+            // Show connect prompt only when truly not connected AND no data
+            if (liveReading == null && !isConnectedOrConnecting) {
                 Spacer(Modifier.height(32.dp))
                 Column(
                     modifier = Modifier.fillMaxWidth(),
@@ -222,52 +147,354 @@ fun HealthMonitorScreen(
                 ) {
                     Icon(Icons.Default.BluetoothSearching, null,
                         tint = if (dark) TextSecondary else TextSecondaryLight,
-                        modifier = Modifier.size(48.dp))
+                        modifier = Modifier.size(52.dp))
                     Spacer(Modifier.height(12.dp))
-                    Text("No data yet",
+                    Text("No signal",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = if (dark) TextSecondary else TextSecondaryLight)
-                    Text("Connect your wearable device to start monitoring",
+                        color = if (dark) TextSecondary else TextSecondaryLight,
+                        fontWeight = FontWeight.SemiBold)
+                    Text("Connect your Arduino EMG wearable",
                         style = MaterialTheme.typography.bodySmall,
                         color = if (dark) TextDisabled else TextSecondaryLight.copy(0.6f),
                         modifier = Modifier.padding(top = 4.dp))
+                    Spacer(Modifier.height(16.dp))
+                    Button(
+                        onClick = onNavigateToDevice,
+                        shape   = RoundedCornerShape(12.dp),
+                        colors  = ButtonDefaults.buttonColors(containerColor = Blue500)
+                    ) {
+                        Icon(Icons.Default.Bluetooth, null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Connect Device", fontWeight = FontWeight.SemiBold)
+                    }
+                }
+                Spacer(Modifier.height(bottomPadding + 28.dp))
+                return@Column
+            }
+
+            // Connected but waiting for first packet
+            if (liveReading == null && isConnectedOrConnecting) {
+                Spacer(Modifier.height(32.dp))
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    val inf = rememberInfiniteTransition(label = "wait")
+                    val alpha by inf.animateFloat(
+                        initialValue = 0.3f, targetValue = 1f,
+                        animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
+                        label = "wa"
+                    )
+                    Icon(Icons.Default.Sensors, null,
+                        tint = (if (dark) TextSecondary else TextSecondaryLight).copy(alpha),
+                        modifier = Modifier.size(52.dp))
+                    Spacer(Modifier.height(12.dp))
+                    Text("Waiting for sensor data…",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (dark) TextSecondary else TextSecondaryLight,
+                        fontWeight = FontWeight.SemiBold)
+                    Text("Device connected — ensure Arduino is transmitting",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (dark) TextDisabled else TextSecondaryLight.copy(0.6f),
+                        modifier = Modifier.padding(top = 4.dp))
+                }
+                Spacer(Modifier.height(bottomPadding + 28.dp))
+                return@Column
+            }
+
+            // ── Session controls ──────────────────────────────────────────────
+            SessionControls(
+                isSessionActive     = isSessionActive,
+                sessionReadingCount = sessionReadingCount,
+                reportState         = reportState,
+                dark                = dark,
+                onStart             = { vm.startSession() },
+                onCancel            = { vm.cancelSession() }
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            val hr   = liveReading?.bpm
+            val mot  = liveReading?.motionDetected ?: false
+            val fall = liveReading?.fallDetected ?: false
+
+            val derivedTemp = remember(liveReading) {
+                DerivedVitalsCalculator.calculateTemperature(
+                    liveReading?.emgRaw?.toFloat(), liveReading?.bpm?.toFloat()
+                )
+            }
+            val derivedSpo2 = remember(liveReading) {
+                DerivedVitalsCalculator.calculateSpO2(
+                    liveReading?.emgRaw?.toFloat(), liveReading?.bpm?.toFloat()
+                )
+            }
+
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                VitalCard(
+                    icon      = Icons.Default.Favorite,
+                    label     = "Heart Rate",
+                    value     = hr?.toString() ?: "--",
+                    unit      = "bpm",
+                    sourceTag = "LIVE SENSOR",
+                    color     = if (hr != null && (hr < 50 || hr > 100)) ErrorRed else SuccessGreen,
+                    dark      = dark,
+                    modifier  = Modifier.weight(1f)
+                )
+                VitalCard(
+                    icon      = Icons.Default.Air,
+                    label     = "SpO\u2082",
+                    value     = derivedSpo2.value?.toString() ?: "--",
+                    unit      = "%",
+                    sourceTag = "EST.",
+                    color     = if (derivedSpo2.value != null && derivedSpo2.value < 94) ErrorRed else SuccessGreen,
+                    dark      = dark,
+                    modifier  = Modifier.weight(1f)
+                )
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                VitalCard(
+                    icon      = Icons.Default.Thermostat,
+                    label     = "Temperature",
+                    value     = derivedTemp.value?.let { "%.1f".format(it) } ?: "--",
+                    unit      = "\u00b0C",
+                    sourceTag = "EST.",
+                    color     = if (derivedTemp.value != null && (derivedTemp.value > 37.8f || derivedTemp.value < 35f)) WarnAmber else SuccessGreen,
+                    dark      = dark,
+                    modifier  = Modifier.weight(1f)
+                )
+                VitalCard(
+                    icon      = if (fall) Icons.Default.Warning else Icons.Default.DirectionsWalk,
+                    label     = if (fall) "Fall Detected!" else "Motion",
+                    value     = if (fall) "FALL" else if (mot) "Active" else "Still",
+                    unit      = "",
+                    sourceTag = "LIVE SENSOR",
+                    color     = if (fall) ErrorRed else if (mot) WarnAmber else SuccessGreen,
+                    dark      = dark,
+                    modifier  = Modifier.weight(1f)
+                )
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            val emg = liveReading?.emgRaw
+            val emgColor = when {
+                emg == null                                    -> if (dark) TextSecondary else TextSecondaryLight
+                emg >= AnomalyThresholds.EMG_HIGH_CRITICAL    -> ErrorRed
+                emg >= AnomalyThresholds.EMG_HIGH_WARNING     -> WarnAmber
+                emg >= AnomalyThresholds.EMG_ACTIVE_THRESHOLD -> Blue500
+                else                                           -> SuccessGreen
+            }
+            val emgLabel = when {
+                emg == null                                    -> "Waiting for data…"
+                emg >= AnomalyThresholds.EMG_HIGH_CRITICAL    -> "Spasm / High Activity"
+                emg >= AnomalyThresholds.EMG_HIGH_WARNING     -> "Muscle Fatigue"
+                emg >= AnomalyThresholds.EMG_ACTIVE_THRESHOLD -> "Active Contraction"
+                else                                           -> "Resting"
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(if (dark) DarkSurface else LightSurface)
+                    .border(1.dp, emgColor.copy(0.4f), RoundedCornerShape(18.dp))
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .background(emgColor.copy(0.12f), RoundedCornerShape(12.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.ElectricBolt, null,
+                                tint = emgColor, modifier = Modifier.size(22.dp))
+                        }
+                        Column {
+                            Text("EMG — Muscle Activity",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (dark) TextSecondary else TextSecondaryLight)
+                            Text(emgLabel,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = emgColor,
+                                fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(emg?.toString() ?: "--",
+                            style = MaterialTheme.typography.displaySmall,
+                            color = if (dark) TextPrimary else TextPrimaryLight,
+                            fontWeight = FontWeight.Bold)
+                        Text("/ 1023 ADC",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (dark) TextSecondary else TextSecondaryLight)
+                    }
+                }
+                val emgPct = (emg ?: 0) / 1023f
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(10.dp)
+                        .clip(RoundedCornerShape(5.dp))
+                        .background(if (dark) DarkSurfaceElevated else LightSurfaceElevated)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(emgPct.coerceIn(0f, 1f))
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(5.dp))
+                            .background(Brush.horizontalGradient(listOf(SuccessGreen, emgColor)))
+                    )
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    ThresholdChip("Rest",   "< ${AnomalyThresholds.EMG_ACTIVE_THRESHOLD}", SuccessGreen, dark)
+                    ThresholdChip("Active", "${AnomalyThresholds.EMG_ACTIVE_THRESHOLD}+",  Blue500,      dark)
+                    ThresholdChip("Fatigue","${AnomalyThresholds.EMG_HIGH_WARNING}+",      WarnAmber,    dark)
+                    ThresholdChip("Spasm",  "${AnomalyThresholds.EMG_HIGH_CRITICAL}+",     ErrorRed,     dark)
                 }
             }
 
             Spacer(Modifier.height(20.dp))
 
-            // ── End Session & Generate Report ─────────────────────────────────
-            EndSessionButton(
-                reportState = reportState,
-                hasData     = vitals != null,
-                dark        = dark,
-                onClick     = { vm.endSessionAndReport() }
-            )
+            EmgOscilloscope(buffer = emgBuffer, color = emgColor, dark = dark)
+
+            Spacer(Modifier.height(20.dp))
+
+            liveReading?.let { v ->
+                val fmt = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val pulse = rememberInfiniteTransition(label = "live")
+                    val alpha by pulse.animateFloat(
+                        initialValue = 0.3f, targetValue = 1f,
+                        animationSpec = infiniteRepeatable(tween(600), RepeatMode.Reverse),
+                        label = "a"
+                    )
+                    Box(Modifier.size(7.dp).background(SuccessGreen.copy(alpha), CircleShape))
+                    Spacer(Modifier.width(6.dp))
+                    Text("LIVE  •  ${fmt.format(Date(v.timestamp))}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (dark) TextSecondary else TextSecondaryLight)
+                }
+            }
+
+            AnimatedVisibility(
+                visible = aiExplanation.isNotBlank(),
+                enter   = fadeIn() + expandVertically(),
+                exit    = fadeOut() + shrinkVertically()
+            ) {
+                Column {
+                    Spacer(Modifier.height(16.dp))
+                    AiAnalysisCard(explanation = aiExplanation, dark = dark)
+                }
+            }
+
+            Spacer(Modifier.height(20.dp))
+
+            if (isSessionActive) {
+                EndSessionButton(
+                    reportState = reportState,
+                    dark        = dark,
+                    onClick     = { vm.endSessionAndReport() }
+                )
+            }
 
             Spacer(Modifier.height(bottomPadding + 28.dp))
         }
     }
 }
 
-// ── Waveform Graph ─────────────────────────────────────────────────────────────
+// ── Session Controls ──────────────────────────────────────────────────────────
 
 @Composable
-private fun WaveformGraph(
-    label  : String,
-    unit   : String,
-    values : List<Float?>,
-    color  : Color,
-    dark   : Boolean,
-    yMin   : Float,
-    yMax   : Float
+private fun SessionControls(
+    isSessionActive     : Boolean,
+    sessionReadingCount : Int,
+    reportState         : HealthViewModel.ReportState,
+    dark                : Boolean,
+    onStart             : () -> Unit,
+    onCancel            : () -> Unit
 ) {
+    val isGenerating = reportState is HealthViewModel.ReportState.Generating
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (!isSessionActive) {
+            Button(
+                onClick  = onStart,
+                modifier = Modifier.weight(1f).height(48.dp),
+                shape    = RoundedCornerShape(12.dp),
+                colors   = ButtonDefaults.buttonColors(containerColor = SuccessGreen)
+            ) {
+                Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Start Session", fontWeight = FontWeight.SemiBold)
+            }
+        } else {
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(SuccessGreen.copy(0.08f))
+                    .border(1.dp, SuccessGreen.copy(0.3f), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                val pulse = rememberInfiniteTransition(label = "sess")
+                val alpha by pulse.animateFloat(
+                    initialValue = 0.4f, targetValue = 1f,
+                    animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
+                    label = "sp"
+                )
+                Box(Modifier.size(7.dp).background(SuccessGreen.copy(alpha), CircleShape))
+                Column {
+                    Text("Session Active",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = SuccessGreen,
+                        fontWeight = FontWeight.Bold)
+                    Text("$sessionReadingCount readings stored",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (dark) TextSecondary else TextSecondaryLight)
+                }
+            }
+            OutlinedButton(
+                onClick  = onCancel,
+                enabled  = !isGenerating,
+                modifier = Modifier.height(48.dp),
+                shape    = RoundedCornerShape(12.dp),
+                border   = BorderStroke(1.dp, ErrorRed.copy(0.5f)),
+                colors   = ButtonDefaults.outlinedButtonColors(contentColor = ErrorRed)
+            ) {
+                Icon(Icons.Default.Stop, null, modifier = Modifier.size(16.dp))
+            }
+        }
+    }
+}
+
+// ── EMG Oscilloscope ──────────────────────────────────────────────────────────
+
+@Composable
+private fun EmgOscilloscope(buffer: List<Float>, color: Color, dark: Boolean) {
+    val gridColor    = if (dark) Color.White.copy(0.06f) else Color.Black.copy(0.06f)
+    val labelColor   = if (dark) TextSecondary else TextSecondaryLight
     val surfaceColor = if (dark) DarkSurface else LightSurface
     val borderColor  = if (dark) DarkBorder  else LightBorder
-    val gridColor    = if (dark) Color.White.copy(0.05f) else Color.Black.copy(0.05f)
-    val textColor    = if (dark) TextSecondary else TextSecondaryLight
-
-    // Animate the latest value for the live dot
-    val latestValid = values.lastOrNull { it != null }
 
     Column(
         modifier = Modifier
@@ -282,83 +509,94 @@ private fun WaveformGraph(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                // Pulsing live dot
-                val pulse = rememberInfiniteTransition(label = "pulse")
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                val pulse = rememberInfiniteTransition(label = "osc")
                 val alpha by pulse.animateFloat(
-                    initialValue = 0.4f, targetValue = 1f,
-                    animationSpec = infiniteRepeatable(tween(800), RepeatMode.Reverse),
-                    label = "alpha"
+                    initialValue = 0.3f, targetValue = 1f,
+                    animationSpec = infiniteRepeatable(tween(500), RepeatMode.Reverse),
+                    label = "b"
                 )
                 Box(Modifier.size(7.dp).background(color.copy(alpha), CircleShape))
-                Text(label, style = MaterialTheme.typography.labelSmall,
-                    color = textColor, fontWeight = FontWeight.SemiBold)
+                Text("EMG Oscilloscope",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = labelColor,
+                    fontWeight = FontWeight.SemiBold)
             }
-            Text(latestValid?.let { "%.1f".format(it) + " $unit" } ?: "-- $unit",
+            Text("0 – 1023 ADC",
                 style = MaterialTheme.typography.labelSmall,
-                color = color, fontWeight = FontWeight.Bold)
+                color = labelColor)
         }
 
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(10.dp))
 
-        Canvas(modifier = Modifier.fillMaxWidth().height(72.dp)) {
+        androidx.compose.foundation.Canvas(
+            modifier = Modifier.fillMaxWidth().height(160.dp)
+        ) {
             val w = size.width
             val h = size.height
-            val range = (yMax - yMin).coerceAtLeast(1f)
-
-            // Grid lines
-            for (i in 0..3) {
-                val y = h * i / 3f
+            for (i in 0..4) {
+                val y = h * i / 4f
                 drawLine(gridColor, Offset(0f, y), Offset(w, y), strokeWidth = 1f)
             }
-
-            // Build path from valid points
-            val validPoints = values.mapIndexedNotNull { idx, v ->
-                if (v == null) null
-                else {
-                    val x = w * idx / (values.size - 1).coerceAtLeast(1).toFloat()
-                    val y = h - h * ((v - yMin) / range).coerceIn(0f, 1f)
-                    Offset(x, y)
-                }
+            val warnY   = h - h * (AnomalyThresholds.EMG_HIGH_WARNING.toFloat()    / 1023f)
+            val critY   = h - h * (AnomalyThresholds.EMG_HIGH_CRITICAL.toFloat()   / 1023f)
+            val activeY = h - h * (AnomalyThresholds.EMG_ACTIVE_THRESHOLD.toFloat()/ 1023f)
+            drawLine(SuccessGreen.copy(0.25f), Offset(0f, activeY), Offset(w, activeY), strokeWidth = 1f,
+                pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f)))
+            drawLine(WarnAmber.copy(0.35f),    Offset(0f, warnY),   Offset(w, warnY),   strokeWidth = 1f,
+                pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f)))
+            drawLine(ErrorRed.copy(0.35f),     Offset(0f, critY),   Offset(w, critY),   strokeWidth = 1f,
+                pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f)))
+            if (buffer.size < 2) return@Canvas
+            val step = w / (buffer.size - 1).toFloat()
+            val path = Path()
+            buffer.forEachIndexed { i, v ->
+                val x = i * step
+                val y = h - h * (v / 1023f).coerceIn(0f, 1f)
+                if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
             }
-
-            if (validPoints.size >= 2) {
-                // Filled gradient area
-                val fillPath = Path().apply {
-                    moveTo(validPoints.first().x, h)
-                    validPoints.forEach { lineTo(it.x, it.y) }
-                    lineTo(validPoints.last().x, h)
-                    close()
-                }
-                drawPath(
-                    fillPath,
-                    brush = Brush.verticalGradient(
-                        colors = listOf(color.copy(0.25f), color.copy(0f)),
-                        startY = 0f, endY = h
-                    )
-                )
-
-                // ECG-style line
-                val linePath = Path().apply {
-                    moveTo(validPoints.first().x, validPoints.first().y)
-                    for (i in 1 until validPoints.size) {
-                        val prev = validPoints[i - 1]
-                        val curr = validPoints[i]
-                        val cx = (prev.x + curr.x) / 2f
-                        cubicTo(cx, prev.y, cx, curr.y, curr.x, curr.y)
-                    }
-                }
-                drawPath(linePath, color = color, style = Stroke(width = 2.5f, cap = StrokeCap.Round))
-
-                // Live dot at last point
-                drawCircle(color, radius = 5f, center = validPoints.last())
-                drawCircle(color.copy(0.3f), radius = 9f, center = validPoints.last())
+            val fillPath = Path().apply {
+                addPath(path)
+                lineTo((buffer.size - 1) * step, h)
+                lineTo(0f, h)
+                close()
             }
+            drawPath(fillPath, brush = Brush.verticalGradient(
+                colors = listOf(color.copy(0.18f), color.copy(0f)), startY = 0f, endY = h))
+            drawPath(path, color = color, style = Stroke(width = 2f, cap = StrokeCap.Round))
+            val lastX = (buffer.size - 1) * step
+            val lastY = h - h * (buffer.last() / 1023f).coerceIn(0f, 1f)
+            drawCircle(color, radius = 5f, center = Offset(lastX, lastY))
+            drawCircle(color.copy(0.25f), radius = 10f, center = Offset(lastX, lastY))
+        }
+
+        Spacer(Modifier.height(6.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("0",    style = MaterialTheme.typography.labelSmall, color = labelColor)
+            Text("256",  style = MaterialTheme.typography.labelSmall, color = labelColor)
+            Text("512",  style = MaterialTheme.typography.labelSmall, color = labelColor)
+            Text("768",  style = MaterialTheme.typography.labelSmall, color = labelColor)
+            Text("1023", style = MaterialTheme.typography.labelSmall, color = labelColor)
         }
     }
 }
 
-// ── AI Analysis Card ───────────────────────────────────────────────────────────
+// ── Threshold chip ────────────────────────────────────────────────────────────
+
+@Composable
+private fun ThresholdChip(label: String, range: String, color: Color, dark: Boolean) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(Modifier.size(8.dp).background(color, CircleShape))
+        Spacer(Modifier.height(3.dp))
+        Text(label, style = MaterialTheme.typography.labelSmall,
+            color = color, fontWeight = FontWeight.SemiBold, fontSize = 9.sp)
+        Text(range, style = MaterialTheme.typography.labelSmall,
+            color = if (dark) TextSecondary else TextSecondaryLight, fontSize = 8.sp)
+    }
+}
+
+// ── AI Analysis Card ──────────────────────────────────────────────────────────
 
 @Composable
 private fun AiAnalysisCard(explanation: String, dark: Boolean) {
@@ -370,53 +608,48 @@ private fun AiAnalysisCard(explanation: String, dark: Boolean) {
             .border(1.dp, Blue500.copy(0.25f), RoundedCornerShape(16.dp))
             .padding(14.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Icon(Icons.Default.Psychology, null, tint = Blue500, modifier = Modifier.size(18.dp))
-            Text("AI Analysis",
-                style = MaterialTheme.typography.labelMedium,
-                color = Blue500,
-                fontWeight = FontWeight.Bold)
+            Text("AI Analysis", style = MaterialTheme.typography.labelMedium,
+                color = Blue500, fontWeight = FontWeight.Bold)
         }
         Spacer(Modifier.height(8.dp))
-        Text(explanation,
-            style = MaterialTheme.typography.bodySmall,
-            color = if (dark) TextPrimary else TextPrimaryLight,
-            lineHeight = 18.sp)
+        Text(explanation, style = MaterialTheme.typography.bodySmall,
+            color = if (dark) TextPrimary else TextPrimaryLight, lineHeight = 18.sp)
     }
 }
 
-// ── End Session Button ─────────────────────────────────────────────────────────
+// ── End Session Button ────────────────────────────────────────────────────────
 
 @Composable
 private fun EndSessionButton(
     reportState : HealthViewModel.ReportState,
-    hasData     : Boolean,
     dark        : Boolean,
     onClick     : () -> Unit
 ) {
-    val isGenerating = reportState == HealthViewModel.ReportState.Generating
-
+    val isGenerating = reportState is HealthViewModel.ReportState.Generating
+    val stepText = if (isGenerating)
+        (reportState as HealthViewModel.ReportState.Generating).step
+    else "End Session & Generate Report"
     Button(
         onClick  = onClick,
-        enabled  = hasData && !isGenerating,
+        enabled  = !isGenerating,
         modifier = Modifier.fillMaxWidth().height(52.dp),
         shape    = RoundedCornerShape(14.dp),
         colors   = ButtonDefaults.buttonColors(
-            containerColor = if (dark) DarkSurfaceElevated else LightSurfaceElevated,
-            contentColor   = if (dark) TextPrimary else TextPrimaryLight,
+            containerColor         = if (dark) DarkSurfaceElevated else LightSurfaceElevated,
+            contentColor           = if (dark) TextPrimary else TextPrimaryLight,
             disabledContainerColor = if (dark) DarkSurface else LightSurface,
             disabledContentColor   = if (dark) TextDisabled else TextSecondaryLight
         ),
         border = BorderStroke(1.dp, if (dark) DarkBorder else LightBorder)
     ) {
         if (isGenerating) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(18.dp),
-                color    = Blue500,
-                strokeWidth = 2.dp
-            )
+            CircularProgressIndicator(modifier = Modifier.size(18.dp),
+                color = Blue500, strokeWidth = 2.dp)
             Spacer(Modifier.width(10.dp))
-            Text("Generating Report…", fontWeight = FontWeight.SemiBold)
+            Text(stepText, fontWeight = FontWeight.SemiBold)
         } else {
             Icon(Icons.Default.Assessment, null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
@@ -425,76 +658,15 @@ private fun EndSessionButton(
     }
 }
 
-// ── Session Report Dialog ──────────────────────────────────────────────────────
-
-@Composable
-private fun SessionReportDialog(report: String, dark: Boolean, onDismiss: () -> Unit) {
-    Dialog(onDismissRequest = onDismiss) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(20.dp))
-                .background(if (dark) DarkSurface else LightSurface)
-                .border(1.dp, if (dark) DarkBorder else LightBorder, RoundedCornerShape(20.dp))
-                .padding(20.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Box(
-                    modifier = Modifier.size(36.dp).background(Blue500.copy(0.12f), RoundedCornerShape(10.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Default.MedicalServices, null, tint = Blue500, modifier = Modifier.size(18.dp))
-                }
-                Column {
-                    Text("Body Health Report",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = if (dark) TextPrimary else TextPrimaryLight,
-                        fontWeight = FontWeight.Bold)
-                    Text("Generated by G-ONE AI",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (dark) TextSecondary else TextSecondaryLight)
-                }
-            }
-
-            Spacer(Modifier.height(14.dp))
-            HorizontalDivider(color = if (dark) DarkBorder else LightBorder)
-            Spacer(Modifier.height(14.dp))
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 320.dp)
-                    .verticalScroll(rememberScrollState())
-            ) {
-                Text(report,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (dark) TextPrimary else TextPrimaryLight,
-                    lineHeight = 20.sp)
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            Button(
-                onClick  = onDismiss,
-                modifier = Modifier.fillMaxWidth(),
-                shape    = RoundedCornerShape(12.dp),
-                colors   = ButtonDefaults.buttonColors(containerColor = Blue500)
-            ) {
-                Text("Close", fontWeight = FontWeight.SemiBold)
-            }
-        }
-    }
-}
-
-// ── Shared sub-composables ─────────────────────────────────────────────────────
+// ── Connection Badge ──────────────────────────────────────────────────────────
 
 @Composable
 private fun ConnectionBadge(btState: BtState, dark: Boolean, onClick: () -> Unit) {
     val (label, color) = when (btState) {
-        is BtState.Connected    -> "Connected" to SuccessGreen
-        is BtState.Connecting   -> "Connecting…" to WarnAmber
-        is BtState.Error        -> "Error" to ErrorRed
-        is BtState.Disconnected -> "Disconnected" to if (dark) TextSecondary else TextSecondaryLight
+        is BtState.Connected    -> "Connected"    to SuccessGreen
+        is BtState.Connecting   -> "Connecting…"  to WarnAmber
+        is BtState.Error        -> "Error"         to ErrorRed
+        is BtState.Disconnected -> "Disconnected" to (if (dark) TextSecondary else TextSecondaryLight)
     }
     Row(
         modifier = Modifier
@@ -506,9 +678,73 @@ private fun ConnectionBadge(btState: BtState, dark: Boolean, onClick: () -> Unit
         horizontalArrangement = Arrangement.spacedBy(5.dp)
     ) {
         Box(Modifier.size(6.dp).background(color, CircleShape))
-        Text(label, style = MaterialTheme.typography.labelSmall, color = color, fontWeight = FontWeight.SemiBold)
+        Text(label, style = MaterialTheme.typography.labelSmall,
+            color = color, fontWeight = FontWeight.SemiBold)
     }
 }
+
+// ── Vital Card ────────────────────────────────────────────────────────────────
+
+@Composable
+private fun VitalCard(
+    icon      : androidx.compose.ui.graphics.vector.ImageVector,
+    label     : String,
+    value     : String,
+    unit      : String,
+    sourceTag : String,
+    color     : Color,
+    dark      : Boolean,
+    modifier  : Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(18.dp))
+            .background(if (dark) DarkSurface else LightSurface)
+            .border(1.dp, if (dark) DarkBorder else LightBorder, RoundedCornerShape(18.dp))
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier.size(36.dp)
+                    .background(color.copy(0.12f), RoundedCornerShape(10.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(icon, null, tint = color, modifier = Modifier.size(18.dp))
+            }
+            Text(
+                sourceTag,
+                style = MaterialTheme.typography.labelSmall,
+                color = if (sourceTag == "LIVE SENSOR") SuccessGreen.copy(0.8f)
+                        else WarnAmber.copy(0.8f),
+                fontSize = 7.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+        Text(label,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (dark) TextSecondary else TextSecondaryLight)
+        Row(verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(value,
+                style = MaterialTheme.typography.headlineSmall,
+                color = if (dark) TextPrimary else TextPrimaryLight,
+                fontWeight = FontWeight.Bold)
+            if (unit.isNotEmpty()) {
+                Text(unit,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (dark) TextSecondary else TextSecondaryLight,
+                    modifier = Modifier.padding(bottom = 3.dp))
+            }
+        }
+    }
+}
+
+// ── Alert Banner ──────────────────────────────────────────────────────────────
 
 @Composable
 private fun AlertBanner(count: Int, dark: Boolean) {
@@ -529,47 +765,5 @@ private fun AlertBanner(count: Int, dark: Boolean) {
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.weight(1f))
         Icon(Icons.Default.ChevronRight, null, tint = ErrorRed, modifier = Modifier.size(16.dp))
-    }
-}
-
-@Composable
-private fun VitalCard(
-    icon     : ImageVector,
-    label    : String,
-    value    : String,
-    unit     : String,
-    color    : Color,
-    dark     : Boolean,
-    modifier : Modifier = Modifier
-) {
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(18.dp))
-            .background(if (dark) DarkSurface else LightSurface)
-            .border(1.dp, if (dark) DarkBorder else LightBorder, RoundedCornerShape(18.dp))
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        Box(
-            modifier = Modifier.size(36.dp).background(color.copy(0.12f), RoundedCornerShape(10.dp)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(icon, null, tint = color, modifier = Modifier.size(18.dp))
-        }
-        Text(label,
-            style = MaterialTheme.typography.labelSmall,
-            color = if (dark) TextSecondary else TextSecondaryLight)
-        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(value,
-                style = MaterialTheme.typography.headlineSmall,
-                color = if (dark) TextPrimary else TextPrimaryLight,
-                fontWeight = FontWeight.Bold)
-            if (unit.isNotEmpty()) {
-                Text(unit,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (dark) TextSecondary else TextSecondaryLight,
-                    modifier = Modifier.padding(bottom = 3.dp))
-            }
-        }
     }
 }
